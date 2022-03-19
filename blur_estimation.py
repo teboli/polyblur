@@ -73,7 +73,7 @@ def find_maximal_blur_direction(gradient_magnitudes, n_angles=6, n_interpolated_
     thetas = np.linspace(0, 180, n_angles+1)
     # interpolate at new angles the magnitude
     interpolated_thetas = np.array([i*180.0/n_interpolated_angles for i in range(n_interpolated_angles)])
-    interpolator = interpolate.interp1d(thetas, gradient_magnitudes, kind='linear')
+    interpolator = interpolate.interp1d(thetas, gradient_magnitudes, kind='cubic')
     interpolated_gradient_magnitudes = interpolator(interpolated_thetas)
     i_min = np.argmin(gradient_magnitudes)
     theta_normal = interpolated_thetas[i_min]
