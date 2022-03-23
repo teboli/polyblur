@@ -16,7 +16,7 @@ def polyblur(img, n_iter=1, c=0.352, sigma_b=0.768, alpha=2, b=3, masking=False,
         kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, sigma_b=sigma_b)
         ## Non-blind deblurring
         impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=b, masking=masking, do_edgetaper=True)
-    impred = np.clip(impred, 0.0, 1.0)
+        impred = np.clip(impred, 0.0, 1.0)
     return impred
 
 
