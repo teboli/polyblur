@@ -7,15 +7,33 @@ from filters import fourier_gradients
 import edgetaper
 import filters
 import blur_estimation
+import domain_transform
 
 
-def polyblur(img, n_iter=1, c=0.352, sigma_b=0.768, alpha=2, b=3, masking=False, do_edgetaper=True):
-    impred = img
+def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, masking=False, edgetaping=False, prefiltering=False):
+    ## Do prefiltering to not enhance noise
+    if prefiltering:
+        # sigma_r = 0.4
+        # sigma_s = 60
+        sigma_r = 0.8
+        sigma_s = 4
+        img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s)
+        img_noise = img - img_smoothed
+        impred = img_smoothed
+    else:
+        impred = img
+
+    ## Main loop
     for n in range(n_iter):
         ## Blur estimation
-        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, sigma_b=sigma_b)
+        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, sigma_b=b)
         ## Non-blind deblurring
-        impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=b, masking=masking, do_edgetaper=True)
+        impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=beta, masking=masking, do_edgetaper=edgetaping)
+        impred = np.clip(impred, 0.0, 1.0)
+
+    ## Add back the noise residual if required
+    if prefiltering:
+        impred = impred + img_noise
         impred = np.clip(impred, 0.0, 1.0)
     return impred
 
