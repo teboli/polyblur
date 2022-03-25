@@ -3,14 +3,14 @@ import torch
 
 
 def recursive_filter(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image=None):
-    if img.dtype == np.ndarray:
-        return recursive_filter_np(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image=None)
+    if type(img) == np.ndarray:
+        return recursive_filter_np(img, sigma_s, sigma_r, num_iterations, joint_image)
     else:
-        return recursive_filter_torch(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image=None)
+        return recursive_filter_torch(img, sigma_s, sigma_r, num_iterations, joint_image)
 
 
 def recursive_filter_np(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image=None):
-    if img.ndim ==2:
+    if img.ndim == 2:
         img = img[..., None]
     I = np.array(img)
 
@@ -59,7 +59,10 @@ def recursive_filter_np(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_im
 
     F = F.astype(img.dtype)
 
-    return np.squeeze(F, -1)  # for grayscale images
+    if img.shape[-1] == 1:
+        return np.squeeze(F, -1)  # for grayscale images
+    else:
+        return F
 
 
 def transformed_domain_recursive_filter_horizontal_np(I, D, sigma):
