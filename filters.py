@@ -14,12 +14,9 @@ def gaussian_filter(sigma, theta, shift=np.array([0.0, 0.0]), k_size=np.array([1
 
     # Set COV matrix using Lambdas and Theta
     LAMBDA = np.diag([lambda_1**2, lambda_2**2])
-    print('LAMBDA', LAMBDA)
     Q = np.array([[np.cos(theta), -np.sin(theta)],
                   [np.sin(theta), np.cos(theta)]])
-    print('Q', Q)
     SIGMA = Q @ LAMBDA @ Q.T
-    print('SIGMA', SIGMA)
     INV_SIGMA = np.linalg.inv(SIGMA)[None, None, :, :]
 
     # Set expectation position
