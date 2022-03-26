@@ -22,7 +22,7 @@ def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigm
     ## Main loop
     for n in range(n_iter):
         ## Blur estimation
-        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, sigma_b=b,
+        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b,
                                                           handling_saturation=handling_saturation)
         ## Non-blind deblurring
         if prefiltering:
@@ -47,7 +47,7 @@ def inverse_filtering_rank3(img, kernel, alpha=2, b=3, correlate=False, masking=
     if type(img) == np.ndarray:
         return inverse_filtering_rank3_np(img, kernel, alpha, b, correlate, masking, do_edgetaper)
     else:
-        return inverse_filtering_rank3_torch(img, kernel, alpha, b, correlate, masking)
+        return inverse_filtering_rank3_torch(img, kernel, alpha, b, correlate, masking, do_edgetaper)
 
 
 def compute_polynomial(Y, K, C, alpha, b):
@@ -120,9 +120,9 @@ def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=3, correlate=False, ma
         ks = kernel.shape[0] // 2
         img = F.pad(img, (ks, ks, ks, ks), mode='circular')
         img = edgetaper.edgetaper(img, kernel)  # for better edge handling
-    ks = kernel.shape[-1] // 2
-    padding = (ks, ks, ks, ks)
-    img = F.pad(img, padding, 'replicate')
+    # ks = kernel.shape[-1] // 2
+    # padding = (ks, ks, ks, ks)
+    # img = F.pad(img, padding, 'replicate')
     h, w = img.shape[-2:]
     Y = torch.fft.fft2(img, dim=(-2, -1))
     K = filters.p2o(kernel, (h, w))  # from NxCxhxw to NxCxHxW
@@ -147,34 +147,47 @@ def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=3, correlate=False, ma
 
 
 class Polyblur(nn.Module):
-    def __init__(self, patch_decomposition=False, patch_overlap=0.25):
+    def __init__(self, patch_decomposition=False, patch_size=400, patch_overlap=0.25, batch_size=1):
         super(Polyblur, self).__init__()
-
+        self.batch_size = batch_size
         self.patch_decomposition = patch_decomposition
+        self.patch_size = (patch_size, patch_size)
         self.patch_overlap = patch_overlap
 
-    def forward(self, blurry, n_iter=1, c=0.352, b=0.468, alpha=2, beta=4, masking=False, edgetaping=False,
-                prefiltering=False):
+    def forward(self, images, n_iter=1, c=0.352, b=0.468, alpha=2, beta=4, sigma_s=2, sigma_r=0.4, masking=False,
+                edgetaping=False, prefiltering=False, handling_saturation=False):
         if self.patch_decomposition:
-            ##### get patch coordinates ####
+            patch_size = self.patch_size
 
             ## Make sure dimensions are even
-            h, w = image.shape[:2]
+            h, w = images.shape[-2:]
             if h % 2 == 1:
-                image = image[:-1, :]
+                images = images[..., :-1, :]
                 h -= 1
             if w % 2 == 1:
-                image = image[:, :-1]
+                images = images[..., :, :-1]
                 w -= 1
 
             ## Pad the image if needed
-            new_h = int(np.ceil(h / patch_size[0]) * patch_size[0])
-            new_w = int(np.ceil(w / patch_size[1]) * patch_size[1])
-            img_padded = pad_with_new_size(image, (new_h, new_w), mode='edge')
+            step_h = int(patch_size[0] * (1 - self.patch_overlap))
+            step_w = int(patch_size[1] * (1 - self.patch_overlap))
+            new_h = int(np.ceil((h - patch_size[0]) / step_h) * step_h) + patch_size[0]
+            new_w = int(np.ceil((w - patch_size[1]) / step_w) * step_w) + patch_size[1]
+            # new_h = int(np.ceil(h / patch_size[0]) * patch_size[0])
+            # new_w = int(np.ceil(w / patch_size[1]) * patch_size[1])
 
-            ## Get indices of the top-left corners of the patches
-            I_coords = np.arange(0, new_h - patch_size[0] + 1, int(patch_size[0] * (1 - overlap_percentage)))
-            J_coords = np.arange(0, new_w - patch_size[1] + 1, int(patch_size[1] * (1 - overlap_percentage)))
+            print(h, w)
+            print(new_h, new_w)
+
+            images_padded = self.pad_with_new_size(images, (new_h, new_w), mode='replicate')
+
+            ## Get indice
+            print('step:', int(patch_size[0] * (1 - self.patch_overlap)))
+            # s of the top-left corners of the patches
+            I_coords = np.arange(0, new_h - patch_size[0] + 1, step_h)
+            J_coords = np.arange(0, new_w - patch_size[1] + 1, step_w)
+            print('I_coords', I_coords)
+            print('J_coords', J_coords)
             IJ_coords = np.meshgrid(I_coords, J_coords, indexing='ij')
             IJ_coords = np.stack(IJ_coords).reshape(2, -1).T  # (N,2)
             n_blocks = len(I_coords) * len(J_coords)
@@ -182,51 +195,92 @@ class Polyblur(nn.Module):
             ## Create the arrays for outputing results
             ph = patch_size[0]
             pw = patch_size[1]
-            window = build_window(patch_size, window_type='kaiser').unsqueeze(0).to(device)  # (1,h,w)
+            window = self.build_window(patch_size, window_type='kaiser').unsqueeze(0).unsqueeze(0).to(images.device)  # (1,1,h,w)
 
-            img_padded = utils.to_tensor(img_padded).to(device)  # (C,H,W)
-            img_restored = torch.zeros_like(img_padded)  # (C,H,W)
-            window_sum = torch.zeros(1, img_padded.shape[1], img_padded.shape[2], device=img_padded.device)  # (1,H,W)
+            images_restored = torch.zeros_like(images_padded)  # (C,H,W)
+            window_sum = torch.zeros(1, 1, images_padded.shape[-2], images_padded.shape[-1], device=images.device)  # (1,1,H,W)
 
             ### End of get patch coordinates
 
-            for b in range(0, n_blocks, batch_size):
+            for m in range(0, n_blocks, self.batch_size):
                 ## Extract the patches
+                IJ_coords_batch = IJ_coords[m:m + self.batch_size]  # (B,2)
+                patches = [images_padded[..., i0:i0 + ph, j0:j0 + pw] for (i0, j0) in IJ_coords_batch]
+                patches = torch.cat(patches, dim=0)  # (B,C,h,w)
 
-                ##### exctract patches #####
-
-                IJ_coords_batch = IJ_coords[b:b + batch_size]  # (B,2)
-                patches = [img_padded[:, i0:i0 + ph, j0:j0 + pw] for (i0, j0) in IJ_coords_batch]
-                patches = torch.stack(patches, dim=0)  # (B,C,h,w)
-
-                ##### End of extract patches ####
+                # import utils
+                # import matplotlib.pyplot as plt
+                # plt.figure()
+                # plt.imshow(utils.to_array(patches))
+                # plt.show()
 
                 ## Deblurring
-                patches_restored = polyblur(patches_blurry, n_iter, c, b, alpha, beta, masking, edgetaping, prefiltering)
+                patches_restored = polyblur(patches, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, sigma_s=sigma_s,
+                                            sigma_r=sigma_r, masking=masking, edgetaping=edgetaping,
+                                            prefiltering=prefiltering, handling_saturation=handling_saturation)
+
+                # plt.figure()
+                # plt.imshow(utils.to_array(patches_restored))
+                # plt.show()
 
                 ## Replace the patches
                 for n in range(IJ_coords_batch.shape[0]):
                     i0, j0 = IJ_coords_batch[n]
-                    img_restored[:, i0:i0 + ph, j0:j0 + pw] += patch_red_restored[n] * window
-                    img_restored[1:2, i0:i0 + ph, j0:j0 + pw] += patches[n, 1:2] * window
-                    img_restored[2:3, i0:i0 + ph, j0:j0 + pw] += patch_blue_restored[n] * window
+                    images_restored[..., i0:i0 + ph, j0:j0 + pw] += patches_restored[n] * window
+                    window_sum[..., i0:i0 + ph, j0:j0 + pw] += window
 
-                    window_sum[:, i0:i0 + ph, j0:j0 + pw] += window
-
-            img_restored = img_restored / (window_sum + 1e-8)
-            img_restored = img_restored.clamp(0.0, 1.0)
-            print('It took %d seconds' % (time.time() - start))
-            img_restored = utils.to_array(img_restored.cpu())  # (H,W,C)
-            img_restored = crop_with_old_size(img_restored, (h, w))
+            images_restored = images_restored / (window_sum + 1e-8)
+            images_restored = images_restored.clamp(0.0, 1.0)
+            images_restored = self.crop_with_old_size(images_restored, (h, w))
         else:
-            restored = polyblur(blurry)
-        return restored
+            images_restored = polyblur(images, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, sigma_s=sigma_s,
+                                       sigma_r=sigma_r, masking=masking, edgetaping=edgetaping,
+                                       prefiltering=prefiltering, handling_saturation=handling_saturation)
+        return images_restored
 
-    def get_patch_coordinates(self):
-        return
+    def build_window(self, image_size, window_type):
+        H, W = image_size
+        if window_type == 'kaiser':
+            window_i = torch.kaiser_window(H, beta=5, periodic=False)
+            window_j = torch.kaiser_window(W, beta=5, periodic=False)
+        elif window_type == 'hann':
+            window_i = torch.hann_window(H, periodic=False)
+            window_j = torch.hann_window(W, periodic=False)
+        elif window_type == 'hamming':
+            window_i = torch.hamming_window(H, periodic=False)
+            window_j = torch.hamming_window(W, periodic=False)
+        elif window_type == 'bartlett':
+            window_i = torch.bartlett_window(H, periodic=False)
+            window_j = torch.bartlett_window(W, periodic=False)
+        else:
+            Exception('Window not implemented')
 
-    def extract_patches(self):
-        return
+        return window_i.unsqueeze(-1) * window_j.unsqueeze(0)
 
-    def put_back_patches(self):
-        return
+    def pad_with_new_size(self, img, new_size, mode='constant'):
+        h, w = img.shape[-2:]
+        new_h, new_w = new_size
+        pad_left = int(np.floor((new_w - w)/2))
+        pad_right = int(np.ceil((new_w - w) / 2))
+        pad_top = int(np.floor((new_h - h)/2))
+        pad_bottom = int(np.ceil((new_h - h) / 2))
+        padding = [pad_left, pad_right, pad_top, pad_bottom]
+        img = F.pad(img, padding, mode=mode)
+        return img
+
+    def crop_with_old_size(self, img, old_size):
+        h, w, = img.shape[-2:]
+        old_h, old_w = old_size
+        crop_left = int(np.floor((w - old_w)/2))
+        if crop_left > 0:
+            img = img[..., :, crop_left:]
+        crop_right = int(np.ceil((w - old_w) / 2))
+        if crop_right > 0:
+            img = img[..., :, :-crop_right]
+        crop_top = int(np.floor((h - old_h) / 2))
+        if crop_top > 0:
+            img = img[..., crop_top:, :]
+        crop_bottom = int(np.ceil((h - old_h) / 2))
+        if crop_bottom > 0:
+            img = img[..., :-crop_bottom, :]
+        return img

@@ -103,8 +103,10 @@ def recursive_filter_torch(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint
     dIcdy = torch.diff(J, n=1, dim=-2)
 
     # compute the l1-norm distance of neighbor pixels.
-    dIdx = torch.sum(torch.abs(dIcdx), dim=1)
-    dIdy = torch.sum(torch.abs(dIcdy), dim=1)
+    dIdx = torch.zeros(batch, h, w, device=I.device)
+    dIdx[:, :, 1:] = torch.sum(torch.abs(dIcdx), dim=1)
+    dIdy = torch.zeros(batch, h, w, device=I.device)
+    dIdy[:, 1:, :] = torch.sum(torch.abs(dIcdy), dim=1)
 
     # compute the derivatives of the horizontal and vertical domain transforms
     dHdx = (1 + sigma_s/sigma_r * dIdx)
@@ -142,6 +144,7 @@ def transformed_domain_recursive_filter_horizontal_torch(I, D, sigma):
     V = a**D
 
     batch, num_channels, h, w = I.shape
+    # batch, h, w = D.shape
 
     # Left -> Right filter
     for i in range(1, w, 1):
