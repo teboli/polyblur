@@ -17,13 +17,12 @@ import domain_transform
 
 
 def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2, masking=False, edgetaping=False,
-             prefiltering=False, handling_saturation=False):
+             prefiltering=False, saturation_mask=None):
     impred = img
     ## Main loop
     for n in range(n_iter):
         ## Blur estimation
-        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b,
-                                                          handling_saturation=handling_saturation)
+        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b, mask=saturation_mask)
         ## Non-blind deblurring
         if prefiltering:
             impred, impred_noise = edge_aware_filtering(impred, sigma_s, sigma_r)
@@ -176,6 +175,9 @@ class Polyblur(nn.Module):
 
             images_padded = self.pad_with_new_size(images, (new_h, new_w), mode='replicate')
 
+            if handling_saturation:
+                masks_padded = images_padded > 0.99  # Assuming pixel values or in [0,1]
+
             ## Get indice
             # s of the top-left corners of the patches
             I_coords = np.arange(0, new_h - patch_size[0] + 1, step_h)
@@ -199,11 +201,16 @@ class Polyblur(nn.Module):
                 IJ_coords_batch = IJ_coords[m:m + self.batch_size]  # (B,2)
                 patches = [images_padded[..., i0:i0 + ph, j0:j0 + pw] for (i0, j0) in IJ_coords_batch]
                 patches = torch.cat(patches, dim=0)  # (B*batch_size,C,h,w) : [0,0,0,0, 1,1,1,1, 2,2,2,2,....]
+                if handling_saturation:
+                    masks = [masks_padded[..., i0:i0 + ph, j0:j0 + pw] for (i0, j0) in IJ_coords_batch]
+                    masks = torch.cat(masks, dim=0)
+                else:
+                    masks = None
 
                 ## Deblurring
                 patches_restored = polyblur(patches, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, sigma_s=sigma_s,
                                             sigma_r=sigma_r, masking=masking, edgetaping=edgetaping,
-                                            prefiltering=prefiltering, handling_saturation=handling_saturation)
+                                            prefiltering=prefiltering, saturation_mask=masks)
 
                 ## Replace the patches
                 for n in range(IJ_coords_batch.shape[0]):
@@ -215,9 +222,13 @@ class Polyblur(nn.Module):
             images_restored = images_restored.clamp(0.0, 1.0)
             images_restored = self.crop_with_old_size(images_restored, (h, w))
         else:
+            if handling_saturation:
+                masks = images > 0.99
+            else:
+                masks = None
             images_restored = polyblur(images, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, sigma_s=sigma_s,
                                        sigma_r=sigma_r, masking=masking, edgetaping=edgetaping,
-                                       prefiltering=prefiltering, handling_saturation=handling_saturation)
+                                       prefiltering=prefiltering, saturation_mask=masks)
         return images_restored
 
     def build_window(self, image_size, window_type):
