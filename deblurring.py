@@ -70,7 +70,7 @@ def halo_masking(img, imout):
         nM = np.sum(grad_x ** 2 + grad_y ** 2, axis=(0, 1))
         z = np.maximum(M / (nM + M), 0)
     else:
-        nM = torch.sum(grad_x ** 2 + grad_y ** 2, dim=(-2, -1))
+        nM = torch.sum(grad_x ** 2 + grad_y ** 2, dim=(-2, -1), keepdim=True)
         z = torch.maximum(M / (nM + M), torch.zeros_like(M))
     imout = z * img + (1 - z) * imout
     return imout
@@ -117,8 +117,8 @@ def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=3, correlate=False, ma
         kernel = torch.rot90(kernel, k=2, dims=(-2, -1))
     ## Go to Fourier domain
     if do_edgetaper:
-        ks = kernel.shape[0] // 2
-        img = F.pad(img, (ks, ks, ks, ks), mode='circular')
+        ks = kernel.shape[-1] // 2
+        img = F.pad(img, (ks, ks, ks, ks), mode='replicate')
         img = edgetaper.edgetaper(img, kernel)  # for better edge handling
     # ks = kernel.shape[-1] // 2
     # padding = (ks, ks, ks, ks)
@@ -134,7 +134,7 @@ def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=3, correlate=False, ma
     if masking:
         imout = halo_masking(img, imout)
     if do_edgetaper:
-        return imout[ks:-ks, ks:-ks]
+        return imout[..., ks:-ks, ks:-ks]
     else:
         return imout
 
@@ -173,21 +173,13 @@ class Polyblur(nn.Module):
             step_w = int(patch_size[1] * (1 - self.patch_overlap))
             new_h = int(np.ceil((h - patch_size[0]) / step_h) * step_h) + patch_size[0]
             new_w = int(np.ceil((w - patch_size[1]) / step_w) * step_w) + patch_size[1]
-            # new_h = int(np.ceil(h / patch_size[0]) * patch_size[0])
-            # new_w = int(np.ceil(w / patch_size[1]) * patch_size[1])
-
-            print(h, w)
-            print(new_h, new_w)
 
             images_padded = self.pad_with_new_size(images, (new_h, new_w), mode='replicate')
 
             ## Get indice
-            print('step:', int(patch_size[0] * (1 - self.patch_overlap)))
             # s of the top-left corners of the patches
             I_coords = np.arange(0, new_h - patch_size[0] + 1, step_h)
             J_coords = np.arange(0, new_w - patch_size[1] + 1, step_w)
-            print('I_coords', I_coords)
-            print('J_coords', J_coords)
             IJ_coords = np.meshgrid(I_coords, J_coords, indexing='ij')
             IJ_coords = np.stack(IJ_coords).reshape(2, -1).T  # (N,2)
             n_blocks = len(I_coords) * len(J_coords)
@@ -206,27 +198,17 @@ class Polyblur(nn.Module):
                 ## Extract the patches
                 IJ_coords_batch = IJ_coords[m:m + self.batch_size]  # (B,2)
                 patches = [images_padded[..., i0:i0 + ph, j0:j0 + pw] for (i0, j0) in IJ_coords_batch]
-                patches = torch.cat(patches, dim=0)  # (B,C,h,w)
-
-                # import utils
-                # import matplotlib.pyplot as plt
-                # plt.figure()
-                # plt.imshow(utils.to_array(patches))
-                # plt.show()
+                patches = torch.cat(patches, dim=0)  # (B*batch_size,C,h,w) : [0,0,0,0, 1,1,1,1, 2,2,2,2,....]
 
                 ## Deblurring
                 patches_restored = polyblur(patches, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, sigma_s=sigma_s,
                                             sigma_r=sigma_r, masking=masking, edgetaping=edgetaping,
                                             prefiltering=prefiltering, handling_saturation=handling_saturation)
 
-                # plt.figure()
-                # plt.imshow(utils.to_array(patches_restored))
-                # plt.show()
-
                 ## Replace the patches
                 for n in range(IJ_coords_batch.shape[0]):
                     i0, j0 = IJ_coords_batch[n]
-                    images_restored[..., i0:i0 + ph, j0:j0 + pw] += patches_restored[n] * window
+                    images_restored[..., i0:i0 + ph, j0:j0 + pw] += patches_restored[n::self.batch_size] * window
                     window_sum[..., i0:i0 + ph, j0:j0 + pw] += window
 
             images_restored = images_restored / (window_sum + 1e-8)
