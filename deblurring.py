@@ -16,21 +16,40 @@ import domain_transform
 #####################################################
 
 
-def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2, masking=False, edgetaping=False,
-             prefiltering=False, saturation_mask=None):
+def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2, ker_size=25, masking=False,
+             edgetaping=False, prefiltering=False, saturation_mask=None, multichannel_kernel=False):
+    """
+    Functional implementation of Polyblur.
+    :param img: (H,W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the blurry image(s)
+    :param n_iter: int, number of polyblur iteration
+    :param c: float, slope of std estimation model (C in the main paper)
+    :param b: float, intercept of the std estimation model
+    :param alpha: float, mid frequencies parameter for deblurring
+    :param beta: float, high frequencies parameter for deblurring
+    :param sigma_r: float, regularization parameter for domain transform (prefiltering)
+    :param sigma_s: float, smoothness parameter for domain transform (prefiltering)
+    :param ker_size: int, kernel(s) size
+    :param masking: bool, using or not halo removal masking
+    :param edgetaping: bool, using or not edgetaping border preprocessing for deblurring
+    :param prefiltering: bool, using or not smooth and textured images split to prevent noise magnification
+    :param saturation_mask: bool, np.array or torch.tensor of same size as img, mask to exclude pixel values in the gradients, e.g., for saturation
+    :param multichannel_kernel: bool, predicting a kernel common to each color channel or a single kernel per color channel
+    :return: impred: np.array or torch.tensor of same size as img, the restored image(s)
+    """
     impred = img
     ## Main loop
     for n in range(n_iter):
         ## Blur estimation
-        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b, mask=saturation_mask)
+        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b, mask=saturation_mask, ker_size=ker_size,
+                                                          multichannel=multichannel_kernel)
         ## Non-blind deblurring
         if prefiltering:
             impred, impred_noise = edge_aware_filtering(impred, sigma_s, sigma_r)
-            impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=beta, masking=masking,
+            impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, beta=beta, masking=masking,
                                              do_edgetaper=edgetaping)
             impred = impred + impred_noise
         else:
-            impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=beta, masking=masking,
+            impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, beta=beta, masking=masking,
                                              do_edgetaper=edgetaping)
         impred = np.clip(impred, 0.0, 1.0)
     return impred
@@ -42,11 +61,22 @@ def edge_aware_filtering(img, sigma_s, sigma_r):
         return img_smoothed, img_noise
 
 
-def inverse_filtering_rank3(img, kernel, alpha=2, b=3, correlate=False, masking=False, do_edgetaper=True):
+def inverse_filtering_rank3(img, kernel, alpha=2, beta=3, correlate=False, masking=False, do_edgetaper=True):
+    """
+    Deconvolution with approximate inverse filter parameterized by alpha and beta.
+    :param img: (H,W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the blurry image(s)
+    :param kernel: (h,w) or (h,w,3) np.array or (B,C,h,w) torch.tensor, the blur kernel(s)
+    :param alpha: float, mid frequencies parameter
+    :param beta: float, high frequencies parameter
+    :param correlate: bool, deconvolving with a correlation or not
+    :param masking: bool, using or not halo removal masking
+    :param do_edgetaper bool, using or not edgetaping border preprocessing for deblurring
+    :return np.array or torch.tensor of same size as img, the deblurred image(s)
+    """
     if type(img) == np.ndarray:
-        return inverse_filtering_rank3_np(img, kernel, alpha, b, correlate, masking, do_edgetaper)
+        return inverse_filtering_rank3_np(img, kernel, alpha, beta, correlate, masking, do_edgetaper)
     else:
-        return inverse_filtering_rank3_torch(img, kernel, alpha, b, correlate, masking, do_edgetaper)
+        return inverse_filtering_rank3_torch(img, kernel, alpha, beta, correlate, masking, do_edgetaper)
 
 
 def compute_polynomial(Y, K, C, alpha, b):
@@ -147,14 +177,23 @@ def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=3, correlate=False, ma
 
 class Polyblur(nn.Module):
     def __init__(self, patch_decomposition=False, patch_size=400, patch_overlap=0.25, batch_size=1):
+        """
+        A nn.Module wrapper of deblurring.polyblur with inner patch decomposition if processing large images
+        where the blur may vary.
+        :param patch_decomposition: bool, decomposing the image in patches or not
+        :param patch_size: int, size of a square patch
+        :param patch_overlap: float, percentage of patch overlapping
+        :param batch_size: int, number of patches processed at once in polyblur (for memory constraints)
+        """
         super(Polyblur, self).__init__()
         self.batch_size = batch_size
         self.patch_decomposition = patch_decomposition
         self.patch_size = (patch_size, patch_size)
         self.patch_overlap = patch_overlap
 
-    def forward(self, images, n_iter=1, c=0.352, b=0.468, alpha=2, beta=4, sigma_s=2, sigma_r=0.4, masking=False,
-                edgetaping=False, prefiltering=False, handling_saturation=False):
+    def forward(self, images, n_iter=1, c=0.352, b=0.468, alpha=2, beta=4, sigma_s=2, ker_size=25, sigma_r=0.4,
+                masking=False, edgetaping=False, prefiltering=False, handling_saturation=False,
+                multichannel_kernel=False):
         if self.patch_decomposition:
             patch_size = self.patch_size
 
@@ -208,9 +247,10 @@ class Polyblur(nn.Module):
                     masks = None
 
                 ## Deblurring
-                patches_restored = polyblur(patches, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, sigma_s=sigma_s,
-                                            sigma_r=sigma_r, masking=masking, edgetaping=edgetaping,
-                                            prefiltering=prefiltering, saturation_mask=masks)
+                patches_restored = polyblur(patches, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, ker_size=ker_size,
+                                            sigma_s=sigma_s, sigma_r=sigma_r, masking=masking, edgetaping=edgetaping,
+                                            prefiltering=prefiltering, saturation_mask=masks,
+                                            multichannel_kernel=multichannel_kernel)
 
                 ## Replace the patches
                 for n in range(IJ_coords_batch.shape[0]):
@@ -226,9 +266,10 @@ class Polyblur(nn.Module):
                 masks = images > 0.99
             else:
                 masks = None
-            images_restored = polyblur(images, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, sigma_s=sigma_s,
-                                       sigma_r=sigma_r, masking=masking, edgetaping=edgetaping,
-                                       prefiltering=prefiltering, saturation_mask=masks)
+            images_restored = polyblur(images, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, ker_size=ker_size,
+                                       sigma_s=sigma_s, sigma_r=sigma_r, masking=masking, edgetaping=edgetaping,
+                                       prefiltering=prefiltering, saturation_mask=masks,
+                                       multichannel_kernel=multichannel_kernel)
         return images_restored
 
     def build_window(self, image_size, window_type):

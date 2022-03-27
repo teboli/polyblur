@@ -14,8 +14,8 @@ from filters import gaussian_filter, fourier_gradients
 ##############################################
 
 
-def gaussian_blur_estimation(img, q=0.0001, n_angles=6, n_interpolated_angles=30, c=89.8/255, b=0.764, ker_size=25,
-                             mask=None):
+def gaussian_blur_estimation(img, q=0.0001, n_angles=6, n_interpolated_angles=30, c=0.362, b=0.464, ker_size=25,
+                             mask=None, multichannel=False):
     """
         Compute an approximate Gaussian filter from a RGB or grayscale image.
         :param img: (H,W,3) or (H,W) array or (B,3,H,W) or (B,1,H,W) tensor, the image
@@ -26,12 +26,13 @@ def gaussian_blur_estimation(img, q=0.0001, n_angles=6, n_interpolated_angles=30
         :param b: the intercept of the affine model
         :param ker_size: the size of the kernel support
         :param mask: taking care of saturated areas in gradient computation
+        :param multichannel: predicting a kernel per channel or on grayscale image
         :return: kernel: the (ker_size,ker_size) or (B,1,ker_size,ker_size) approximate Gaussian kernel
     """
     if type(img) == np.ndarray:
-        return gaussian_blur_estimation_np(img, q, n_angles, n_interpolated_angles, c, b, ker_size, mask)
+        return gaussian_blur_estimation_np(img, q, n_angles, n_interpolated_angles, c, b, ker_size, mask, multichannel)
     else:
-        return gaussian_blur_estimation_torch(img, q, n_angles, n_interpolated_angles, c, b, ker_size, mask)
+        return gaussian_blur_estimation_torch(img, q, n_angles, n_interpolated_angles, c, b, ker_size, mask, multichannel)
 
 
 
@@ -41,24 +42,34 @@ def gaussian_blur_estimation(img, q=0.0001, n_angles=6, n_interpolated_angles=30
 ##############################################
 
 
-def gaussian_blur_estimation_np(img, q=0.0001, n_angles=6, n_interpolated_angles=30, c=89.8, b=0.764, ker_size=25,
-                             mask=None):
+def gaussian_blur_estimation_np(imgc, q=0.0001, n_angles=6, n_interpolated_angles=30, c=89.8, b=0.764, ker_size=25,
+                                mask=None, multichannel=False):
     # if img is color, go to grayscale
-    if img.ndim == 3:
-        img = color.rgb2gray(img)
-    # normalized image
-    img_normalized = normalize_np(img, q=q)
-    # compute the image gradients
-    gradients = compute_gradients_np(img_normalized, mask=mask)
-    # compute the gradient magnitudes per orientation
-    gradient_magnitudes = compute_gradient_magnitudes_np(gradients, n_angles=n_angles)
-    # find the maximal blur direction amongst sampled orientations
-    magnitude_normal, magnitude_ortho, theta = find_maximal_blur_direction_np(gradient_magnitudes, n_angles=n_angles,
-                                                                           n_interpolated_angles=n_interpolated_angles)
-    # finally compute the Gaussian parameters
-    sigma_0, sigma_1 = compute_gaussian_parameters_np(magnitude_normal, magnitude_ortho, c=c, b=b)
-    # create the blur kernel
-    kernel = create_gaussian_filter_np(sigma_0, sigma_1, theta, ksize=ker_size)
+    if imgc.ndim == 3 and not multichannel:
+        imgc = color.rgb2gray(imgc)
+    if imgc.ndim == 2:
+        imgc = imgc[..., None]
+
+    kernel = np.zeros((ker_size, ker_size, imgc.shape[-1]))
+    for channel in range(imgc.shape[-1]):
+        img = imgc[..., channel]
+        # normalized image
+        img_normalized = normalize_np(img, q=q)
+        # compute the image gradients
+        gradients = compute_gradients_np(img_normalized, mask=mask)
+        # compute the gradient magnitudes per orientation
+        gradient_magnitudes = compute_gradient_magnitudes_np(gradients, n_angles=n_angles)
+        # find the maximal blur direction amongst sampled orientations
+        magnitude_normal, magnitude_ortho, theta = find_maximal_blur_direction_np(gradient_magnitudes, n_angles=n_angles,
+                                                                               n_interpolated_angles=n_interpolated_angles)
+        # finally compute the Gaussian parameters
+        sigma_0, sigma_1 = compute_gaussian_parameters_np(magnitude_normal, magnitude_ortho, c=c, b=b)
+        # create the blur kernel
+        kernel[..., channel] = create_gaussian_filter_np(sigma_0, sigma_1, theta, ksize=ker_size)
+
+    # format the kernel if grayscale image or same kernel for each channel (multichannel=False)
+    if imgc.shape[-1] == 1:
+        kernel = np.squeeze(kernel, -1)  # ker_size x ker_size if image NxMx1
     return kernel
 
 
@@ -122,24 +133,28 @@ def create_gaussian_filter_np(sigma_0, sigma_1, theta, ksize=25):
 
 
 
-def gaussian_blur_estimation_torch(img, q=0.0001, n_angles=6, n_interpolated_angles=30, c=89.8, b=0.764, ker_size=25,
-                             mask=None):
-    # if img is color, go to grayscale
-    if img.shape[1] == 3:
-        img = img.mean(dim=1, keepdims=True)
-    # normalized image
-    img_normalized = normalize_torch(img, q=q)
-    # compute the image gradients
-    gradients = compute_gradients_torch(img_normalized, mask=mask)
-    # compute the gradient magnitudes per orientation
-    gradient_magnitudes = compute_gradient_magnitudes_torch(gradients, n_angles=n_angles)
-    # find the maximal blur direction amongst sampled orientations
-    magnitude_normal, magnitude_ortho, thetas = find_maximal_blur_direction_torch(gradient_magnitudes, n_angles=n_angles,
-                                                                           n_interpolated_angles=n_interpolated_angles)
-    # finally compute the Gaussian parameters
-    sigma, rho = compute_gaussian_parameters_torch(magnitude_normal, magnitude_ortho, c=c, b=b)
-    # create the blur kernel
-    kernel = create_gaussian_filter_torch(thetas, sigma, rho, ksize=ker_size)
+def gaussian_blur_estimation_torch(imgc, q=0.0001, n_angles=6, n_interpolated_angles=30, c=0.362, b=0.464, ker_size=25,
+                                   mask=None, multichannel=False):
+    # if img is color or multichannel is False (same kernel for each color channel), go to grayscale
+    if imgc.shape[1] == 3 or not multichannel:
+        imgc = imgc.mean(dim=1, keepdims=True)
+
+    kernel = torch.zeros(*imgc.shape[:2], ker_size, ker_size, device=imgc.device).float()  # BxCxhxw or Bx1xhxw
+    for channel in range(imgc.shape[1]):
+        img = imgc[:, channel:channel+1]  # Bx1xHxW
+        # normalized image
+        img_normalized = normalize_torch(img, q=q)
+        # compute the image gradients
+        gradients = compute_gradients_torch(img_normalized, mask=mask)
+        # compute the gradient magnitudes per orientation
+        gradient_magnitudes = compute_gradient_magnitudes_torch(gradients, n_angles=n_angles)
+        # find the maximal blur direction amongst sampled orientations
+        magnitude_normal, magnitude_ortho, thetas = find_maximal_blur_direction_torch(gradient_magnitudes, n_angles=n_angles,
+                                                                               n_interpolated_angles=n_interpolated_angles)
+        # finally compute the Gaussian parameters
+        sigma, rho = compute_gaussian_parameters_torch(magnitude_normal, magnitude_ortho, c=c, b=b)
+        # create the blur kernel
+        kernel[:, channel:channel+1] = create_gaussian_filter_torch(thetas, sigma, rho, ksize=ker_size)
     return kernel
 
 
