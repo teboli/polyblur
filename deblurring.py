@@ -275,17 +275,17 @@ class Polyblur(nn.Module):
     def build_window(self, image_size, window_type):
         H, W = image_size
         if window_type == 'kaiser':
-            window_i = torch.kaiser_window(H, beta=5, periodic=False)
-            window_j = torch.kaiser_window(W, beta=5, periodic=False)
+            window_i = torch.kaiser_window(H, beta=5, periodic=True)
+            window_j = torch.kaiser_window(W, beta=5, periodic=True)
         elif window_type == 'hann':
-            window_i = torch.hann_window(H, periodic=False)
-            window_j = torch.hann_window(W, periodic=False)
+            window_i = torch.hann_window(H, periodic=True)
+            window_j = torch.hann_window(W, periodic=True)
         elif window_type == 'hamming':
-            window_i = torch.hamming_window(H, periodic=False)
-            window_j = torch.hamming_window(W, periodic=False)
+            window_i = torch.hamming_window(H, periodic=True)
+            window_j = torch.hamming_window(W, periodic=True)
         elif window_type == 'bartlett':
-            window_i = torch.bartlett_window(H, periodic=False)
-            window_j = torch.bartlett_window(W, periodic=False)
+            window_i = torch.bartlett_window(H, periodic=True)
+            window_j = torch.bartlett_window(W, periodic=True)
         else:
             Exception('Window not implemented')
 

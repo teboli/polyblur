@@ -53,10 +53,12 @@ def gaussian_blur_estimation_np(imgc, q=0.0001, n_angles=6, n_interpolated_angle
     kernel = np.zeros((ker_size, ker_size, imgc.shape[-1]))
     for channel in range(imgc.shape[-1]):
         img = imgc[..., channel]
+        # if mask is not None:
+        #     m = mask[..., channel]
         # normalized image
         img_normalized = normalize_np(img, q=q)
         # compute the image gradients
-        gradients = compute_gradients_np(img_normalized, mask=mask)
+        gradients = compute_gradients_np(img_normalized, mask=m)
         # compute the gradient magnitudes per orientation
         gradient_magnitudes = compute_gradient_magnitudes_np(gradients, n_angles=n_angles)
         # find the maximal blur direction amongst sampled orientations
@@ -138,14 +140,19 @@ def gaussian_blur_estimation_torch(imgc, q=0.0001, n_angles=6, n_interpolated_an
     # if img is color or multichannel is False (same kernel for each color channel), go to grayscale
     if imgc.shape[1] == 3 or not multichannel:
         imgc = imgc.mean(dim=1, keepdims=True)
+        # recompute saturation mask
+        if mask is not None:
+            mask = imgc > 0.95
 
     kernel = torch.zeros(*imgc.shape[:2], ker_size, ker_size, device=imgc.device).float()  # BxCxhxw or Bx1xhxw
     for channel in range(imgc.shape[1]):
         img = imgc[:, channel:channel+1]  # Bx1xHxW
+        if mask is not None:
+            m = mask[:, channel:channel+1]  # Bx1xHxW
         # normalized image
         img_normalized = normalize_torch(img, q=q)
         # compute the image gradients
-        gradients = compute_gradients_torch(img_normalized, mask=mask)
+        gradients = compute_gradients_torch(img_normalized, mask=m)
         # compute the gradient magnitudes per orientation
         gradient_magnitudes = compute_gradient_magnitudes_torch(gradients, n_angles=n_angles)
         # find the maximal blur direction amongst sampled orientations
