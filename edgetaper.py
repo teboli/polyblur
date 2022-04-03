@@ -33,7 +33,7 @@ def edgetaper_alpha_np(kernel, img_shape):
         z = np.fft.fft(np.sum(kernel, 1-i), img_shape[i]-1)
         z = np.real(np.fft.ifft(np.square(np.abs(z)))).astype(np.float32)
         z = np.concatenate([z, z[0:1]], 0)
-        v.append(1 - z/np.max(z))
+        v.append(1 - z / np.max(z))
     return np.outer(*v)
 
 
@@ -53,7 +53,7 @@ def edgetaper_alpha_torch(kernel, img_shape):
     z = torch.fft.fft(torch.sum(kernel, -1), img_shape[0]-1)
     z = torch.real(torch.fft.ifft(torch.abs(z)**2)).float()
     z = torch.cat([z, z[..., 0:1]], dim=-1)
-    v1 = 1 - z/torch.max(z)
+    v1 = 1 - z / torch.max(z)
 
     z = torch.fft.fft(torch.sum(kernel, -2), img_shape[1] - 1)
     z = torch.real(torch.fft.ifft(torch.abs(z) ** 2)).float()

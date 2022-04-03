@@ -149,9 +149,6 @@ def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=3, correlate=False, ma
         ks = kernel.shape[-1] // 2
         img = F.pad(img, (ks, ks, ks, ks), mode='replicate')
         img = edgetaper.edgetaper(img, kernel)  # for better edge handling
-    # ks = kernel.shape[-1] // 2
-    # padding = (ks, ks, ks, ks)
-    # img = F.pad(img, padding, 'replicate')
     h, w = img.shape[-2:]
     Y = torch.fft.fft2(img, dim=(-2, -1))
     K = filters.p2o(kernel, (h, w))  # from NxCxhxw to NxCxHxW
@@ -230,7 +227,7 @@ class Polyblur(nn.Module):
             pw = patch_size[1]
             window = self.build_window(patch_size, window_type='kaiser').unsqueeze(0).unsqueeze(0).to(images.device)  # (1,1,h,w)
 
-            images_restored = torch.zeros_like(images_padded)  # (C,H,W)
+            images_restored = torch.zeros_like(images_padded)  # (B,C,H,W)
             window_sum = torch.zeros(1, 1, images_padded.shape[-2], images_padded.shape[-1], device=images.device)  # (1,1,H,W)
 
             ### End of get patch coordinates

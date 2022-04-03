@@ -58,7 +58,7 @@ def gaussian_blur_estimation_np(imgc, q=0.0001, n_angles=6, n_interpolated_angle
         # normalized image
         img_normalized = normalize_np(img, q=q)
         # compute the image gradients
-        gradients = compute_gradients_np(img_normalized, mask=m)
+        gradients = compute_gradients_np(img_normalized, mask=mask)
         # compute the gradient magnitudes per orientation
         gradient_magnitudes = compute_gradient_magnitudes_np(gradients, n_angles=n_angles)
         # find the maximal blur direction amongst sampled orientations
@@ -120,8 +120,10 @@ def find_maximal_blur_direction_np(gradient_magnitudes, n_angles=6, n_interpolat
 
 def compute_gaussian_parameters_np(magnitude_normal, magnitude_ortho, c=89.8, b=0.764):
     sigma_0 = np.sqrt(np.maximum(c**2/magnitude_normal**2 - b**2, 1e-8))
+    sigma_0 = np.maximum(sigma_0, 0.09)
     sigma_0 = np.clip(sigma_0, 0.3, 4.0)
     sigma_1 = np.sqrt(np.maximum(c**2/magnitude_ortho**2 - b**2, 1e-8))
+    sigma_1 = np.maximum(sigma_1, 0.09)
     sigma_1 = np.clip(sigma_1, 0.3, 4.0)
     return sigma_0, sigma_1
 
@@ -143,12 +145,17 @@ def gaussian_blur_estimation_torch(imgc, q=0.0001, n_angles=6, n_interpolated_an
         # recompute saturation mask
         if mask is not None:
             mask = imgc > 0.95
+    if mask is None:
+        m = mask
 
     kernel = torch.zeros(*imgc.shape[:2], ker_size, ker_size, device=imgc.device).float()  # BxCxhxw or Bx1xhxw
     for channel in range(imgc.shape[1]):
         img = imgc[:, channel:channel+1]  # Bx1xHxW
         if mask is not None:
             m = mask[:, channel:channel+1]  # Bx1xHxW
+        else:
+            m = None
+
         # normalized image
         img_normalized = normalize_torch(img, q=q)
         # compute the image gradients
@@ -215,9 +222,11 @@ def find_maximal_blur_direction_torch(gradient_magnitudes_angles, n_angles=6, n_
 def compute_gaussian_parameters_torch(magnitudes_normal, magnitudes_ortho, c, b):
     ## Compute sigma
     sigma = c**2 / (magnitudes_normal ** 2 + 1e-8) - b**2
+    sigma = torch.maximum(sigma, 0.09 * torch.ones_like(sigma))
     sigma = torch.sqrt(sigma).clamp(0.3, 4.0)
     ## Compute rho
     rho = c**2 / (magnitudes_ortho ** 2 + 1e-8) - b**2
+    rho = torch.maximum(sigma, 0.09 * torch.ones_like(rho))
     rho = torch.sqrt(rho).clamp(0.3, 4.0)
     return sigma, rho
 

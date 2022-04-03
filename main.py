@@ -1,15 +1,23 @@
+import os
 import numpy as np
-from skimage import data, img_as_float32
+from skimage import data, img_as_float32, img_as_ubyte, io, transform, filters
 from scipy import ndimage
 import matplotlib.pyplot as plt
 import deblurring
+import utils
+
+from PIL import Image
+Image.MAX_IMAGE_PIXELS = None
 
 
 def main():
-    img = img_as_float32(data.camera())
-    # img = img_as_float32(data.astronaut())
+    ## Synthetic
+    img = img_as_float32(data.camera()); name = 'camera'
+    # img = img_as_float32(data.astronaut()); name = 'astronaut'
+    # img = img_as_float32(data.chelsea()); name = 'chelsea'
+
     if img.ndim == 2:
-        imblur = ndimage.gaussian_filter(img, sigma=(0.5, 3.0), mode='wrap')
+        imblur = ndimage.gaussian_filter(img, sigma=(1.0, 2.8), mode='wrap')
     else:
         imblur = np.zeros_like(img)
         for c in range(3):
@@ -18,40 +26,40 @@ def main():
     imblur = np.clip(imblur + 0.01 * np.random.randn(*imblur.shape), 0.0, 1.0)
 
     # blur estimation options
-    c = 0.35
-    sigma_b = 0.768
-    # c = 0.17
-    # sigma_b = 0.0
+    c = 0.362
+    b = 0.468
 
     # deblurring options
-    alpha = 10
-    b = 3
+    n_iter = 3
+    alpha = 6
+    beta = 1
     masking = True
+    edgetaping = True
+    prefiltering = True
 
     # blind deblurring
-    impred1 = deblurring.polyblur(imblur, n_iter=1, c=c, sigma_b=sigma_b, alpha=alpha, b=b, masking=masking)
-    impred2 = deblurring.polyblur(imblur, n_iter=2, c=c, sigma_b=sigma_b, alpha=alpha, b=b, masking=masking)
-    impred3 = deblurring.polyblur(imblur, n_iter=3, c=c, sigma_b=sigma_b, alpha=alpha, b=b, masking=masking)
+    imblur = utils.to_tensor(imblur).unsqueeze(0)
+    impred = deblurring.polyblur(imblur, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, masking=masking, edgetaping=edgetaping,
+                        prefiltering=prefiltering)
 
-    plt.figure(figsize=(20, 6))
-    plt.subplot(1, 4, 1)
+    imblur = utils.to_array(imblur.squeeze(0))
+    impred = utils.to_array(impred.squeeze(0))
+
+    plt.figure(figsize=(20, 12))
+    plt.subplot(2, 1, 1)
     plt.imshow(imblur, cmap='gray')
     plt.axis('off')
     plt.title('Blurry')
-    plt.subplot(1, 4, 2)
-    plt.imshow(impred1, cmap='gray')
+    plt.subplot(2, 1, 2)
+    plt.imshow(impred, cmap='gray')
     plt.axis('off')
-    plt.title('Prediction 1')
-    plt.subplot(1, 4, 3)
-    plt.imshow(impred2, cmap='gray')
-    plt.axis('off')
-    plt.title('Prediction 2')
-    plt.subplot(1, 4, 4)
-    plt.imshow(impred3, cmap='gray')
-    plt.axis('off')
-    plt.title('Prediction 3')
+    plt.title('Prediction')
     plt.tight_layout()
     plt.show()
+
+    io.imsave(os.path.join('results', name + '_iter.png'), img_as_ubyte(impred))
+
+    print('done')
 
 
 if __name__ == '__main__':
