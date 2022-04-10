@@ -3,3 +3,4 @@ scikit-image
 scipy
 tqdm
 glob
+torch==1.10

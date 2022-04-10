@@ -7,10 +7,10 @@
 This repository contains a Python implementation of *Polyblur: Removing mild blur by polynomial reblurring* in
 IEEE Transaction on Computational Imaging 2021 by Mauricio Delbracio, Ignacio Garcia-Dorado, Soungjoon Choi, 
 Damien Kelly and Peyman Milanfar. We provide Pytorch and Numpy non-official implementations reproducing the quantitative
-and qualitative of the original paper.
+and qualitative results of the original paper.
 
 An analysis of the algorithm can be found in a companion IPOL paper
-whose online demo runs the code of this demo. If this code or the IPOL
+whose online demo runs the code of this rep. If this code, or the IPOL
 paper and demo are useful to your research, please find our paper (to appear)
 
 ### Test
