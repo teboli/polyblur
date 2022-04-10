@@ -1,0 +1,5 @@
+seaborn
+scikit-image
+scipy
+tqdm
+glob
