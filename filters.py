@@ -73,7 +73,7 @@ def fourier_gradients_np(images):
     gyU = 2 * np.pi * freqh * (-np.imag(U) + 1j * np.real(U))
     gyU = np.fft.ifftshift(gyU, axes=(0, 1))
     gyu = np.real(np.fft.ifft2(gyU, axes=(0, 1)))
-    if len(images.shape) == 2:
+    if images.shape[-1] == 1:
         return np.squeeze(gxu, -1), np.squeeze(gyu, -1)
     else:
         return gxu, gyu

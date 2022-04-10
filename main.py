@@ -1,35 +1,23 @@
 import os
-import numpy as np
-from skimage import data, img_as_float32, img_as_ubyte, io, transform, filters
-from scipy import ndimage
+from skimage import img_as_float32, img_as_ubyte, io
 import matplotlib.pyplot as plt
 import deblurring
 import utils
 
-from PIL import Image
-Image.MAX_IMAGE_PIXELS = None
-
 
 def main():
     ## Synthetic
-    img = img_as_float32(data.camera()); name = 'camera'
-    # img = img_as_float32(data.astronaut()); name = 'astronaut'
-    # img = img_as_float32(data.chelsea()); name = 'chelsea'
-
-    if img.ndim == 2:
-        imblur = ndimage.gaussian_filter(img, sigma=(1.0, 2.8), mode='wrap')
-    else:
-        imblur = np.zeros_like(img)
-        for c in range(3):
-            imblur[..., c] = ndimage.gaussian_filter(img[..., c], sigma=(0.5, 3.0), mode='wrap')
-    np.random.seed(0)
-    imblur = np.clip(imblur + 0.01 * np.random.randn(*imblur.shape), 0.0, 1.0)
+    imblur = img_as_float32(plt.imread('peacock_defocus.png'))
 
     # blur estimation options
-    c = 0.362
-    b = 0.468
+    c = 0.374
+    b = 0.461
 
     # deblurring options
+    patch_decomposition = True
+    patch_size = 400
+    patch_overlap = 0.25
+    batch_size = 20
     n_iter = 3
     alpha = 6
     beta = 1
@@ -38,10 +26,12 @@ def main():
     prefiltering = True
 
     # blind deblurring
-    imblur = utils.to_tensor(imblur).unsqueeze(0)
-    impred = deblurring.polyblur(imblur, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, masking=masking, edgetaping=edgetaping,
-                        prefiltering=prefiltering)
+    deblurrer = deblurring.Polyblur(patch_decomposition=patch_decomposition, patch_size=patch_size,
+                                    patch_overlap=patch_overlap, batch_size=batch_size)
 
+    imblur = utils.to_tensor(imblur).unsqueeze(0)
+    impred = deblurrer(imblur, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, masking=masking, edgetaping=edgetaping,
+                        prefiltering=prefiltering)
     imblur = utils.to_array(imblur.squeeze(0))
     impred = utils.to_array(impred.squeeze(0))
 
@@ -57,7 +47,7 @@ def main():
     plt.tight_layout()
     plt.show()
 
-    io.imsave(os.path.join('results', name + '_iter.png'), img_as_ubyte(impred))
+    io.imsave(os.path.join('results/peacock_restored_alpha_%d_beta_%d.png' % (alpha, beta)), img_as_ubyte(impred))
 
     print('done')
 
