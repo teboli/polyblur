@@ -98,6 +98,8 @@ def fourier_gradients_torch(images):
 
 
 
+### From here, taken from https://github.com/cszn/USRNet/blob/master/utils/utils_deblur.py
+
 def p2o(psf, shape):
     '''
     Convert point-spread function to optical transfer function.
