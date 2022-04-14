@@ -50,7 +50,7 @@ def main(image_paths, n_kernel_per_image, kernel_parameters, patch_size=(400, 40
     for i in indexes_out[::-1]:
         del indexes[i]
 
-    noise_std = 0.01
+    noise_std = 0.03
 
     n_images = len(indexes)
     print('n_images:', n_images)
@@ -119,7 +119,8 @@ def main(image_paths, n_kernel_per_image, kernel_parameters, patch_size=(400, 40
     # add_plot(c_n_rgb, s_n_rgb, X_n_rgb, Y_n_rgb, xlabel=r'$1/\|\nabla_\theta n(v)\|_\infty$', ylabel=r'$\sigma$',
     #          do_sqrt=True)
     plt.tight_layout()
-    plt.savefig('./results/calibration_normal_%2.2f.jpg' % noise_std)
+    plt.savefig('./results/calibration_normal_%2.2f.eps' % noise_std)
+    # plt.savefig('./results/calibration_normal_%2.2f.jpg' % noise_std)
     plt.show()
 
     plt.figure(figsize=(8, 6))
@@ -128,7 +129,8 @@ def main(image_paths, n_kernel_per_image, kernel_parameters, patch_size=(400, 40
     # add_plot(c_o_rgb, s_o_rgb, X_o_rgb, Y_o_rgb, xlabel=r'$1/\|\nabla_{\theta+\frac{\pi}{2}} n(v)\|_\infty$',
     #          ylabel=r'$\rho$', do_sqrt=True)
     plt.tight_layout()
-    plt.savefig('./results/calibration_orthogonal_%2.2f.jpg' % noise_std)
+    plt.savefig('./results/calibration_orthogonal_%2.2f.eps' % noise_std)
+    # plt.savefig('./results/calibration_orthogonal_%2.2f.jpg' % noise_std)
     plt.show()
 
 
@@ -169,7 +171,7 @@ def add_plot(a, b, x, y, xlabel, ylabel, do_sqrt=False):
 
     fontsize_label = 22
     fontsize_ticks = 14
-    linewidth = 2.5
+    linewidth = 3.5
     markersize = 4
 
     g_min = x.min()

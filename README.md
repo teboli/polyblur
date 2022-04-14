@@ -11,7 +11,7 @@ and qualitative results of the original paper.
 
 An analysis of the algorithm can be found in a companion IPOL paper
 whose online demo runs the code of this rep. If this code, or the IPOL
-paper and demo are useful to your research, please find our paper (to appear)
+paper and demo are useful to your research, please cite our paper (to appear)
 
 ### Test
 

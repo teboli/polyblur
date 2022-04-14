@@ -173,8 +173,9 @@ def gaussian_blur_estimation_torch(imgc, q=0.0001, n_angles=6, n_interpolated_an
 
 
 def normalize_torch(images, q=0.0001):
-    value_min = np.quantile(images, q=q, axis=(-2, -1), keepdims=True).astype(np.float32)
-    value_max = np.quantile(images, q=1 - q, axis=(-2, -1), keepdims=True).astype(np.float32)
+    b, c, h, w = images.shape
+    value_min = torch.quantile(images.view(b, c, -1), q=q, dim=-1, keepdim=True)
+    value_max = torch.quantile(images.view(b, c, -1), q=1-q, dim=-1, keepdims=True)
     images = (images - value_min) / (value_max - value_min)
     return images.clamp(0.0, 1.0)
 

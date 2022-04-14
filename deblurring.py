@@ -135,6 +135,7 @@ def inverse_filtering_rank3_np(img, kernel, alpha=2, b=3, correlate=False, do_ma
         imout = halo_masking(img, imout)
     if flag_gray:
         imout = np.squeeze(imout, -1)
+    imout = np.clip(imout, 0.0, 1.0)
     if do_edgetaper:
         return imout[ks:-ks, ks:-ks]
     else:
@@ -159,6 +160,7 @@ def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=3, correlate=False, ma
     ## Mask deblurring halos
     if masking:
         imout = halo_masking(img, imout)
+    imout = torch.clamp(imout, 0.0, 1.0)
     if do_edgetaper:
         return imout[..., ks:-ks, ks:-ks]
     else:
@@ -190,7 +192,7 @@ class Polyblur(nn.Module):
 
     def forward(self, images, n_iter=1, c=0.352, b=0.468, alpha=2, beta=4, sigma_s=2, ker_size=25, sigma_r=0.4,
                 masking=False, edgetaping=False, prefiltering=False, handling_saturation=False,
-                multichannel_kernel=False):
+                multichannel_kernel=False, device=None):
         if self.patch_decomposition:
             patch_size = self.patch_size
 
@@ -244,10 +246,14 @@ class Polyblur(nn.Module):
                     masks = None
 
                 ## Deblurring
+                if device is not None:
+                    patches = patches.to(device)
                 patches_restored = polyblur(patches, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, ker_size=ker_size,
                                             sigma_s=sigma_s, sigma_r=sigma_r, masking=masking, edgetaping=edgetaping,
                                             prefiltering=prefiltering, saturation_mask=masks,
                                             multichannel_kernel=multichannel_kernel)
+                if device is not None:
+                    patches_restored = patches_restored.cpu()
 
                 ## Replace the patches
                 for n in range(IJ_coords_batch.shape[0]):
