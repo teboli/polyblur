@@ -50,7 +50,7 @@ def gaussian_blur_estimation_np(imgc, q=0.0001, n_angles=6, n_interpolated_angle
     if imgc.ndim == 2:
         imgc = imgc[..., None]
 
-    kernel = np.zeros((ker_size, ker_size, imgc.shape[-1]))
+    kernel = np.zeros((ker_size, ker_size, imgc.shape[-1]), dtype=np.float32)
     for channel in range(imgc.shape[-1]):
         img = imgc[..., channel]
         # if mask is not None:
@@ -106,8 +106,7 @@ def find_maximal_blur_direction_np(gradient_magnitudes, n_angles=6, n_interpolat
     thetas = np.linspace(0, 180, n_angles+1)
     # interpolate at new angles the magnitude
     interpolated_thetas = np.array([i*180.0/n_interpolated_angles for i in range(n_interpolated_angles)])
-    interpolator = interpolate.interp1d(thetas, gradient_magnitudes, kind='cubic')
-    interpolated_gradient_magnitudes = interpolator(interpolated_thetas)
+    interpolated_gradient_magnitudes = cubic_interpolator_np(interpolated_thetas / n_interpolated_angles, thetas / n_interpolated_angles, gradient_magnitudes)
     i_min = np.argmin(interpolated_gradient_magnitudes)
     theta_normal = interpolated_thetas[i_min]
     magnitude_normal = interpolated_gradient_magnitudes[i_min]
@@ -116,6 +115,21 @@ def find_maximal_blur_direction_np(gradient_magnitudes, n_angles=6, n_interpolat
     i_ortho = int(theta_ortho // (180 / n_interpolated_angles))
     magnitude_ortho = interpolated_gradient_magnitudes[i_ortho]
     return magnitude_normal, magnitude_ortho, theta_normal * np.pi / 180
+
+
+def cubic_interpolator_np(x_new, x, y):
+    """ Key's convolutional approximation of cubic interpolation """
+    abs_s = np.abs(x_new[:, None] - x[None, :])
+    u = np.zeros_like(abs_s)
+    # 0 < |s| < 1
+    mask = abs_s < 1
+    u[mask] = 1.5 * (abs_s[mask]**3) - 2.5 * (abs_s[mask]**2) + 1
+    # 1 <= |s| < 2
+    mask = np.bitwise_and(1 <= abs_s, abs_s < 2)
+    u[mask] = -0.5 * (abs_s[mask]**3) + 2.5 * (abs_s[mask]**2) - 4 * abs_s[mask] + 2
+    u = u / (np.sum(u, axis=1, keepdims=True) + 1e-8)
+    y_new = np.squeeze(u @ y[:, None], -1)
+    return y_new
 
 
 def compute_gaussian_parameters_np(magnitude_normal, magnitude_ortho, c=89.8, b=0.764):
@@ -200,24 +214,49 @@ def compute_gradient_magnitudes_torch(gradients, n_angles=6):
     return gradient_magnitudes_angles
 
 
+def cubic_interpolator_torch(x_new, x, y):
+    abs_s = torch.abs(x_new[..., None] - x[..., None, :])
+    u = torch.zeros_like(abs_s)
+    # 0 < |s| < 1
+    mask = abs_s < 1
+    u[mask] = 1
+    abs_s_mask = abs_s[mask]
+    abs_s_pow = abs_s_mask * abs_s_mask  # ^2
+    u[mask] += -2.5 * abs_s_pow
+    abs_s_pow *= abs_s_mask  # ^3
+    u[mask] += 1.5 * abs_s_pow
+    # 1 <= |s| < 2
+    mask = torch.bitwise_and(1 <= abs_s, abs_s < 2)
+    u[mask] = 2
+    abs_s_mask = abs_s[mask]
+    abs_s_pow = abs_s_mask  # ^1
+    u[mask] += -4 * abs_s_pow
+    abs_s_pow *= abs_s_mask  # ^2
+    u[mask] += 2.5 * abs_s_pow
+    abs_s_pow *= abs_s_mask  # ^3
+    u[mask] += -0.5 * abs_s_pow
+    u = u / (torch.sum(u, dim=-1, keepdim=True) + 1e-8)
+    y_new = (u @ y[..., None]).squeeze(-1)
+    return y_new
+
+
 def find_maximal_blur_direction_torch(gradient_magnitudes_angles, n_angles=6, n_interpolated_angles=30):
     ## Find thetas
-    thetas = np.linspace(0, 180, n_angles+1, dtype=np.float32)
-    interpolated_thetas = np.array([i * 180.0 / n_interpolated_angles for i in range(n_interpolated_angles)],
-                                    dtype=np.float32)
-    interpolator = interpolate.interp1d(thetas, gradient_magnitudes_angles.cpu().numpy(), kind='cubic', axis=-1)
-    gradient_magnitudes_interpolated_angles = interpolator(interpolated_thetas).astype(np.float32)
+    thetas = torch.linspace(0, 180, n_angles+1, device=gradient_magnitudes_angles.device).unsqueeze(0)  # (1,n)
+    interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles, device=thetas.device).unsqueeze(0)  # (1,N)
+    gradient_magnitudes_interpolated_angles = cubic_interpolator_torch(interpolated_thetas / n_interpolated_angles, 
+                                                thetas / n_interpolated_angles, gradient_magnitudes_angles)  # (B,N)
     ## Compute magnitude in theta
-    i_min = np.argmin(gradient_magnitudes_interpolated_angles, axis=1)
-    thetas_normal = interpolated_thetas[i_min]
-    magnitudes_normal = [gradient_magnitudes_interpolated_angles[i, i_min[i]] for i in range(gradient_magnitudes_angles.shape[0])]
-    magnitudes_normal = torch.tensor(magnitudes_normal).to(gradient_magnitudes_angles.device)  # (B)
+    i_min = torch.argmin(gradient_magnitudes_interpolated_angles, dim=-1, keepdim=True).long()
+    # import pdb
+    # pdb.set_trace()
+    thetas_normal = torch.take_along_dim(interpolated_thetas, i_min, dim=-1)
+    magnitudes_normal = torch.take_along_dim(gradient_magnitudes_interpolated_angles, i_min, dim=-1)
     ## Compute magnitude in theta+90
     thetas_ortho = (thetas_normal + 90.0) % 180  # angle in [0,pi)
-    i_ortho = (thetas_ortho // (180 / n_interpolated_angles)).astype(np.int32)
-    magnitudes_ortho = [gradient_magnitudes_interpolated_angles[i, i_ortho[i]] for i in range(gradient_magnitudes_angles.shape[0])]
-    magnitudes_ortho = torch.tensor(magnitudes_ortho).to(gradient_magnitudes_angles.device)  # (B)
-    return magnitudes_normal[:, None], magnitudes_ortho[:, None], torch.tensor(thetas_normal)[:, None] * np.pi / 180
+    i_ortho = (thetas_ortho / (180 / n_interpolated_angles)).long()
+    magnitudes_ortho = torch.take_along_dim(gradient_magnitudes_interpolated_angles, i_ortho, dim=-1)
+    return magnitudes_normal, magnitudes_ortho, thetas_normal * np.pi / 180
 
 
 def compute_gaussian_parameters_torch(magnitudes_normal, magnitudes_ortho, c, b):

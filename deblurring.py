@@ -10,6 +10,8 @@ import filters
 import blur_estimation
 import domain_transform
 
+from scipy import signal, ndimage, fftpack
+
 
 #####################################################
 #############  Numpy/Pytorch routine  ###############
@@ -38,6 +40,7 @@ def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigm
     """
     impred = img
     ## Main loop
+
     for n in range(n_iter):
         ## Blur estimation
         kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b, mask=saturation_mask, ker_size=ker_size,
@@ -51,7 +54,6 @@ def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigm
         else:
             impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, beta=beta, masking=masking,
                                              do_edgetaper=edgetaping)
-        impred = np.clip(impred, 0.0, 1.0)
     return impred
 
 
@@ -61,7 +63,7 @@ def edge_aware_filtering(img, sigma_s, sigma_r):
         return img_smoothed, img_noise
 
 
-def inverse_filtering_rank3(img, kernel, alpha=2, beta=3, correlate=False, masking=False, do_edgetaper=True):
+def inverse_filtering_rank3(img, kernel, alpha=2, beta=3, correlate=False, masking=False, do_edgetaper=False):
     """
     Deconvolution with approximate inverse filter parameterized by alpha and beta.
     :param img: (H,W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the blurry image(s)
@@ -100,12 +102,13 @@ def halo_masking(img, imout):
         z = np.maximum(M / (nM + M), 0)
     else:
         nM = torch.sum(grad_x ** 2 + grad_y ** 2, dim=(-2, -1), keepdim=True)
-        z = torch.maximum(M / (nM + M), torch.zeros_like(M))
+        z = torch.clip(M / (nM + M), min=0)
     imout = z * img + (1 - z) * imout
     return imout
 
 
-def inverse_filtering_rank3_np(img, kernel, alpha=2, b=3, correlate=False, do_masking=False, do_edgetaper=True):
+def inverse_filtering_rank3_np(img, kernel, alpha=2, b=4, correlate=False, do_masking=False, do_edgetaper=False):
+    ## Handling the grayscale case
     if img.ndim == 2:
         img = img[..., None]
         kernel = kernel[..., None]
@@ -116,40 +119,40 @@ def inverse_filtering_rank3_np(img, kernel, alpha=2, b=3, correlate=False, do_ma
             kernel = np.stack([kernel, kernel, kernel], axis=-1)
     if correlate:
         kernel = np.rot90(kernel, k=2, axes=(0, 1))
-    ## Go to Fourier domain
+    ## Padding
+    ks = kernel.shape[0] // 2
+    img = np.pad(img, [(ks, ks), (ks, ks), (0, 0)], mode='edge')
     if do_edgetaper:
-        ks = kernel.shape[0] // 2
-        img = np.pad(img, [(ks, ks), (ks, ks), (0, 0)], mode='edge')
         img = [edgetaper.edgetaper(img[..., c], kernel[..., c]) for c in range(img.shape[-1])]  # for better edgehandling
         img = np.stack(img, axis=-1)
+    ## Go to Fourier domain
     h, w = img.shape[:2]
-    Y = np.fft.fft2(img, axes=(0, 1))
-    K = [filters.psf2otf(kernel[..., c], (h, w)) for c in range(img.shape[-1])]
-    K = np.stack(K, axis=-1)
+    Y = fftpack.fft2(img, axes=(0, 1))
+    K = [filters.psf2otf(kernel[..., c], (h, w)) for c in range(img.shape[-1])]  # from hxwxC to HxWxC
+    K = np.stack(K, axis=-1)  # HxWxC
     C = np.conj(K) / (np.abs(K) + 1e-8)
     ## Compute compensation filter
     X = compute_polynomial(Y, K, C, alpha, b)
-    imout = np.real(np.fft.ifft2(X, axes=(0, 1)))
+    imout = np.real(fftpack.ifft2(X, axes=(0, 1)))
+    imout = imout[ks:-ks, ks:-ks]
+    img = img[ks:-ks, ks:-ks]
     ## Mask deblurring halos
     if do_masking:
         imout = halo_masking(img, imout)
     if flag_gray:
         imout = np.squeeze(imout, -1)
-    imout = np.clip(imout, 0.0, 1.0)
-    if do_edgetaper:
-        return imout[ks:-ks, ks:-ks]
-    else:
-        return imout
+    return np.clip(imout, 0.0, 1.0)
 
 
-def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=3, correlate=False, masking=False, do_edgetaper=True):
+def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=4, correlate=False, masking=False, do_edgetaper=False):
     if correlate:
         kernel = torch.rot90(kernel, k=2, dims=(-2, -1))
-    ## Go to Fourier domain
+    ## Padding
+    ks = kernel.shape[-1] // 2
+    img = F.pad(img, (ks, ks, ks, ks), mode='replicate')
     if do_edgetaper:
-        ks = kernel.shape[-1] // 2
-        img = F.pad(img, (ks, ks, ks, ks), mode='replicate')
         img = edgetaper.edgetaper(img, kernel)  # for better edge handling
+    ## Go to Fourier domain
     h, w = img.shape[-2:]
     Y = torch.fft.fft2(img, dim=(-2, -1))
     K = filters.p2o(kernel, (h, w))  # from NxCxhxw to NxCxHxW
@@ -157,16 +160,12 @@ def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=3, correlate=False, ma
     ## Compute compensation filter
     X = compute_polynomial(Y, K, C, alpha, b)
     imout = torch.real(torch.fft.ifft2(X, dim=(-2, -1)))
+    imout = imout[..., ks:-ks, ks:-ks]
+    img = img[..., ks:-ks, ks:-ks]
     ## Mask deblurring halos
     if masking:
         imout = halo_masking(img, imout)
-    imout = torch.clamp(imout, 0.0, 1.0)
-    if do_edgetaper:
-        return imout[..., ks:-ks, ks:-ks]
-    else:
-        return imout
-
-
+    return torch.clamp(imout, 0.0, 1.0)
 
 
 #####################################################

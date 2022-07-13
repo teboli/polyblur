@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import torch.fft
+from scipy import fftpack
 
 
 def gaussian_filter(sigma, theta, shift=np.array([0.0, 0.0]), k_size=np.array([15, 15])):
@@ -30,7 +31,7 @@ def gaussian_filter(sigma, theta, shift=np.array([0.0, 0.0]), k_size=np.array([1
     # Calculate Gaussian for every pixel of the kernel
     ZZ = Z-MU
     ZZ_t = ZZ.transpose(0, 1, 3, 2)
-    raw_kernel = np.exp(-0.5 * np.squeeze(ZZ_t @ INV_SIGMA @ ZZ))
+    raw_kernel = np.exp(-0.5 * np.squeeze(ZZ_t @ INV_SIGMA @ ZZ)).astype(np.float32)
 
     # Normalize the kernel and return
     if np.sum(raw_kernel) < 1e-2:
@@ -60,19 +61,19 @@ def fourier_gradients_np(images):
     if len(images.shape) == 2:
         images = images[..., None]  # to handle BW images as RGB ones
     ## compute FT
-    U = np.fft.fft2(images, axes=(0, 1))
-    U = np.fft.fftshift(U, axes=(0, 1))
+    U = fftpack.fft2(images, axes=(0, 1))
+    U = fftpack.fftshift(U, axes=(0, 1))
     ## Create the freqs components
     H, W = images.shape[:2]
-    freqh = (np.arange(0, H) - H // 2)[:, None, None] / H
-    freqw = (np.arange(0, W) - W // 2)[None, :, None] / W
+    freqh = (np.arange(0, H, dtype=np.float32) - H // 2)[:, None, None] / H
+    freqw = (np.arange(0, W, dtype=np.float32) - W // 2)[None, :, None] / W
     ## Compute gradients in Fourier domain
     gxU = 2 * np.pi * freqw * (-np.imag(U) + 1j * np.real(U))
-    gxU = np.fft.ifftshift(gxU, axes=(0, 1))
-    gxu = np.real(np.fft.ifft2(gxU, axes=(0, 1)))
+    gxU = fftpack.ifftshift(gxU, axes=(0, 1))
+    gxu = np.real(fftpack.ifft2(gxU, axes=(0, 1)))
     gyU = 2 * np.pi * freqh * (-np.imag(U) + 1j * np.real(U))
-    gyU = np.fft.ifftshift(gyU, axes=(0, 1))
-    gyu = np.real(np.fft.ifft2(gyU, axes=(0, 1)))
+    gyU = fftpack.ifftshift(gyU, axes=(0, 1))
+    gyu = np.real(fftpack.ifft2(gyU, axes=(0, 1)))
     if images.shape[-1] == 1:
         return np.squeeze(gxu, -1), np.squeeze(gyu, -1)
     else:
@@ -191,5 +192,5 @@ def psf2otf(psf, shape=None):
     for axis, axis_size in enumerate(inshape):
         psf = np.roll(psf, -int(axis_size / 2), axis=axis)
     # Compute the OTF
-    otf = np.fft.fft2(psf, axes=(0, 1))
+    otf = fftpack.fft2(psf, axes=(0, 1))
     return otf

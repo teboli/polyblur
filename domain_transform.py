@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import math
 
 
 def recursive_filter(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image=None):
@@ -12,7 +13,7 @@ def recursive_filter(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image
 def recursive_filter_np(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image=None):
     if img.ndim == 2:
         img = img[..., None]
-    I = np.array(img)
+    I = np.array(img).astype(np.float32)
 
     if joint_image is None:
         J = I
@@ -26,8 +27,8 @@ def recursive_filter_np(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_im
     dIcdx = np.diff(J, n=1, axis=1)
     dIcdy = np.diff(J, n=1, axis=0)
 
-    dIdx = np.zeros((h, w))
-    dIdy = np.zeros((h, w))
+    dIdx = np.zeros((h, w)).astype(np.float32)
+    dIdy = np.zeros((h, w)).astype(np.float32)
 
     # compute the l1-norm distance of neighbor pixels.
     for c in range(num_joint_channels):
@@ -35,8 +36,8 @@ def recursive_filter_np(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_im
         dIdy[1:, :] = dIdy[1:, :] + np.abs(dIcdy[:, :, c])
 
     # compute the derivatives of the horizontal and vertical domain transforms
-    dHdx = (1 + sigma_s/sigma_r * dIdx)
-    dVdy = (1 + sigma_s/sigma_r * dIdy)
+    dHdx = (1 + sigma_s/sigma_r * dIdx).astype(np.float32)
+    dVdy = (1 + sigma_s/sigma_r * dIdy).astype(np.float32)
 
     # the veritcal pass is performed using a transposed image
     dVdy = dVdy.T
@@ -47,17 +48,24 @@ def recursive_filter_np(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_im
 
     sigma_H = sigma_s
 
+    import time
     for i in range(num_iterations):
         # Compute the sigma value for this iterations (Equation 14 of our paper)
         sigma_H_i = sigma_H * np.sqrt(3) * 2**(N - (i + 1)) / np.sqrt(4**N - 1)
 
+        start = time.time()
         F = transformed_domain_recursive_filter_horizontal_np(F, dHdx, sigma_H_i)
+        print('T1 %d | %2.4f' % (i, time.time() - start))
+        start = time.time()
         F = np.transpose(F, (1, 0, 2))
+        print('T2 %d | %2.4f' % (i, time.time() - start))
 
+        start = time.time()
         F = transformed_domain_recursive_filter_horizontal_np(F, dVdy, sigma_H_i)
+        print('T3 %d | %2.4f' % (i, time.time() - start))
+        start = time.time()
         F = np.transpose(F, (1, 0, 2))
-
-    F = F.astype(img.dtype)
+        print('T4 %d | %2.4f' % (i, time.time() - start))
 
     if img.shape[-1] == 1:
         return np.squeeze(F, -1)  # for grayscale images
@@ -88,7 +96,7 @@ def transformed_domain_recursive_filter_horizontal_np(I, D, sigma):
 
 
 def recursive_filter_torch(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image=None):
-    I = img.clone()
+    I = img
 
     if joint_image is None:
         J = I
@@ -121,9 +129,10 @@ def recursive_filter_torch(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint
 
     sigma_H = sigma_s
 
+    import time
     for i in range(num_iterations):
         # Compute the sigma value for this iterations (Equation 14 of our paper)
-        sigma_H_i = sigma_H * np.sqrt(3) * 2**(N - (i + 1)) / np.sqrt(4**N - 1)
+        sigma_H_i = sigma_H * math.sqrt(3) * 2**(N - (i + 1)) / math.sqrt(4**N - 1)
 
         F = transformed_domain_recursive_filter_horizontal_torch(F, dHdx, sigma_H_i)
         F = F.transpose(-1, -2)
@@ -131,30 +140,27 @@ def recursive_filter_torch(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint
         F = transformed_domain_recursive_filter_horizontal_torch(F, dVdy, sigma_H_i)
         F = F.transpose(-1, -2)
 
-    F = F.type_as(img)
-
     return F
 
 
 def transformed_domain_recursive_filter_horizontal_torch(I, D, sigma):
     # Feedback coefficient (Appendix of our paper).
-    a = np.exp(-np.sqrt(2) / sigma)
+    a = math.exp(-math.sqrt(2) / sigma)
 
-    F = I
+    F = I 
+
     V = a**D
+    V = V.unsqueeze(1)
 
-    batch, num_channels, h, w = I.shape
-    # batch, h, w = D.shape
+    batch, num_channels, h, w = F.shape
 
     # Left -> Right filter
     for i in range(1, w, 1):
-        for c in range(num_channels):
-            F[:, c, :, i] = F[:, c, :, i] + V[:, :, i] * (F[:, c, :, i - 1] - F[:, c, :, i])
+        F[:, :, :, i] = F[:, :, :, i] + V[:, :, :, i] * (F[:, :, :, i - 1] - F[:, :, :, i])
 
     # Right -> Left filter
     for i in range(w-2, -1, -1):  # from w-2 to 0
-        for c in range(num_channels):
-            F[:, c, :, i] = F[:, c, :, i] + V[:, :, i + 1] * (F[:, c, :, i + 1] - F[:, c, :, i])
+        F[:, :, :, i] = F[:, :, :, i] + V[:, :, :, i + 1] * (F[:, :, :, i + 1] - F[:, :, :, i])
 
     return F
 
