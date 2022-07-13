@@ -18,6 +18,7 @@ from scipy import signal, ndimage, fftpack
 #####################################################
 
 
+
 def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2, ker_size=25, masking=False,
              edgetaping=False, prefiltering=False, saturation_mask=None, multichannel_kernel=False):
     """
@@ -54,6 +55,7 @@ def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigm
         else:
             impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, beta=beta, masking=masking,
                                              do_edgetaper=edgetaping)
+        impred = impred.clip(0.0, 1.0)
     return impred
 
 

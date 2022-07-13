@@ -3,7 +3,7 @@ import torch
 import math
 
 
-def recursive_filter(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image=None):
+def recursive_filter(img, sigma_s=60, sigma_r=0.4, num_iterations=1, joint_image=None):
     if type(img) == np.ndarray:
         return recursive_filter_np(img, sigma_s, sigma_r, num_iterations, joint_image)
     else:
@@ -48,24 +48,15 @@ def recursive_filter_np(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_im
 
     sigma_H = sigma_s
 
-    import time
     for i in range(num_iterations):
         # Compute the sigma value for this iterations (Equation 14 of our paper)
         sigma_H_i = sigma_H * np.sqrt(3) * 2**(N - (i + 1)) / np.sqrt(4**N - 1)
 
-        start = time.time()
         F = transformed_domain_recursive_filter_horizontal_np(F, dHdx, sigma_H_i)
-        print('T1 %d | %2.4f' % (i, time.time() - start))
-        start = time.time()
         F = np.transpose(F, (1, 0, 2))
-        print('T2 %d | %2.4f' % (i, time.time() - start))
 
-        start = time.time()
         F = transformed_domain_recursive_filter_horizontal_np(F, dVdy, sigma_H_i)
-        print('T3 %d | %2.4f' % (i, time.time() - start))
-        start = time.time()
         F = np.transpose(F, (1, 0, 2))
-        print('T4 %d | %2.4f' % (i, time.time() - start))
 
     if img.shape[-1] == 1:
         return np.squeeze(F, -1)  # for grayscale images
