@@ -147,11 +147,11 @@ def transformed_domain_recursive_filter_horizontal_torch(I, D, sigma):
 
     # Left -> Right filter
     for i in range(1, w, 1):
-        F[:, :, :, i] = F[:, :, :, i] + V[:, :, :, i] * (F[:, :, :, i - 1] - F[:, :, :, i])
+        F[..., i] += V[..., i] * (F[..., i - 1] - F[..., i])
 
     # Right -> Left filter
     for i in range(w-2, -1, -1):  # from w-2 to 0
-        F[:, :, :, i] = F[:, :, :, i] + V[:, :, :, i + 1] * (F[:, :, :, i + 1] - F[:, :, :, i])
+        F[..., i] += V[..., i + 1] * (F[..., i + 1] - F[..., i])
 
     return F
 

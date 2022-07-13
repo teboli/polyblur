@@ -15,7 +15,7 @@ from filters import gaussian_filter, fourier_gradients
 
 
 def gaussian_blur_estimation(img, q=0.0001, n_angles=6, n_interpolated_angles=30, c=0.362, b=0.464, ker_size=25,
-                             mask=None, multichannel=False):
+                             discard_saturation=False, multichannel=False):
     """
         Compute an approximate Gaussian filter from a RGB or grayscale image.
         :param img: (H,W,3) or (H,W) array or (B,3,H,W) or (B,1,H,W) tensor, the image
@@ -25,14 +25,14 @@ def gaussian_blur_estimation(img, q=0.0001, n_angles=6, n_interpolated_angles=30
         :param c: the slope of the affine model
         :param b: the intercept of the affine model
         :param ker_size: the size of the kernel support
-        :param mask: taking care of saturated areas in gradient computation
+        :param discard_saturation: taking care of saturated areas in gradient computation
         :param multichannel: predicting a kernel per channel or on grayscale image
         :return: kernel: the (ker_size,ker_size) or (B,1,ker_size,ker_size) approximate Gaussian kernel
     """
     if type(img) == np.ndarray:
-        return gaussian_blur_estimation_np(img, q, n_angles, n_interpolated_angles, c, b, ker_size, mask, multichannel)
+        return gaussian_blur_estimation_np(img, q, n_angles, n_interpolated_angles, c, b, ker_size, discard_saturation, multichannel)
     else:
-        return gaussian_blur_estimation_torch(img, q, n_angles, n_interpolated_angles, c, b, ker_size, mask, multichannel)
+        return gaussian_blur_estimation_torch(img, q, n_angles, n_interpolated_angles, c, b, ker_size, discard_saturation, multichannel)
 
 
 
@@ -43,7 +43,7 @@ def gaussian_blur_estimation(img, q=0.0001, n_angles=6, n_interpolated_angles=30
 
 
 def gaussian_blur_estimation_np(imgc, q=0.0001, n_angles=6, n_interpolated_angles=30, c=89.8, b=0.764, ker_size=25,
-                                mask=None, multichannel=False):
+                                discard_saturation=False, multichannel=False):
     # if img is color, go to grayscale
     if imgc.ndim == 3 and not multichannel:
         imgc = color.rgb2gray(imgc)
@@ -52,9 +52,12 @@ def gaussian_blur_estimation_np(imgc, q=0.0001, n_angles=6, n_interpolated_angle
 
     kernel = np.zeros((ker_size, ker_size, imgc.shape[-1]), dtype=np.float32)
     for channel in range(imgc.shape[-1]):
-        img = imgc[..., channel]
-        # if mask is not None:
-        #     m = mask[..., channel]
+        img = imgc[..., channel]  # HxW
+        # (optional) remove saturated areas
+        if discard_saturation:
+            mask = img > 0.99
+        else:
+            mask = np.zeros_like(img, dtype=np.bool)
         # normalized image
         img_normalized = normalize_np(img, q=q)
         # compute the image gradients
@@ -82,11 +85,10 @@ def normalize_np(img, q):
     return np.clip(img_normalized, 0.0, 1.0)
 
 
-def compute_gradients_np(img, mask=None):
+def compute_gradients_np(img, mask):
     gradient_x, gradient_y = fourier_gradients(img)
-    if mask is not None:
-        gradient_x[mask] = 0
-        gradient_y[mask] = 0
+    gradient_x[mask] = 0
+    gradient_y[mask] = 0
     return gradient_x, gradient_y
 
 
@@ -152,28 +154,23 @@ def create_gaussian_filter_np(sigma_0, sigma_1, theta, ksize=25):
 
 
 def gaussian_blur_estimation_torch(imgc, q=0.0001, n_angles=6, n_interpolated_angles=30, c=0.362, b=0.464, ker_size=25,
-                                   mask=None, multichannel=False):
+                                   discard_saturation=False, multichannel=False):
     # if img is color or multichannel is False (same kernel for each color channel), go to grayscale
     if imgc.shape[1] == 3 or not multichannel:
         imgc = imgc.mean(dim=1, keepdims=True)
-        # recompute saturation mask
-        if mask is not None:
-            mask = imgc > 0.95
-    if mask is None:
-        m = mask
 
     kernel = torch.zeros(*imgc.shape[:2], ker_size, ker_size, device=imgc.device).float()  # BxCxhxw or Bx1xhxw
     for channel in range(imgc.shape[1]):
         img = imgc[:, channel:channel+1]  # Bx1xHxW
-        if mask is not None:
-            m = mask[:, channel:channel+1]  # Bx1xHxW
+        # (optional) remove saturated areas
+        if discard_saturation:
+            mask = img > 0.99
         else:
-            m = None
-
+            mask = torch.zeros_like(img).bool()
         # normalized image
         img_normalized = normalize_torch(img, q=q)
         # compute the image gradients
-        gradients = compute_gradients_torch(img_normalized, mask=m)
+        gradients = compute_gradients_torch(img_normalized, mask=mask)
         # compute the gradient magnitudes per orientation
         gradient_magnitudes = compute_gradient_magnitudes_torch(gradients, n_angles=n_angles)
         # find the maximal blur direction amongst sampled orientations
@@ -194,11 +191,10 @@ def normalize_torch(images, q=0.0001):
     return images.clamp(0.0, 1.0)
 
 
-def compute_gradients_torch(img, mask=None):
+def compute_gradients_torch(img, mask):
     gradient_x, gradient_y = fourier_gradients(img)
-    if mask is not None:
-        gradient_x[mask] = 0
-        gradient_y[mask] = 0
+    gradient_x[mask] = 0
+    gradient_y[mask] = 0
     return gradient_x, gradient_y
 
 

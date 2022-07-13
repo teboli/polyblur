@@ -25,9 +25,11 @@ def main():
     n_iter = 3
     alpha = 6
     beta = 1
-    masking = True
+    remove_halo = True
     edgetaping = False
     prefiltering = True
+    multichannel_kernel = False
+    discard_saturation = False
 
     # blind deblurring
     deblurrer = deblurring.Polyblur(patch_decomposition=patch_decomposition, patch_size=patch_size,
@@ -35,8 +37,8 @@ def main():
 
     imblur = utils.to_tensor(imblur).unsqueeze(0).to(device)
     start = time.time()
-    impred = deblurrer(imblur, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, masking=masking, edgetaping=edgetaping,
-                        prefiltering=prefiltering)
+    impred = deblurrer(imblur, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, remove_halo=remove_halo, edgetaping=edgetaping,
+                        prefiltering=prefiltering, multichannel_kernel=multichannel_kernel, discard_saturation=discard_saturation)
     print('Restoration took %2.4f seconds' % (time.time() - start))
     imblur = utils.to_array(imblur.squeeze(0).cpu())
     impred = utils.to_array(impred.squeeze(0).cpu())

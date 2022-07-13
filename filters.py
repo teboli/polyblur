@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torch.fft
-from scipy import fftpack
+import scipy.fft
 
 
 def gaussian_filter(sigma, theta, shift=np.array([0.0, 0.0]), k_size=np.array([15, 15])):
@@ -50,6 +50,22 @@ def dirac(dims):
     return kernel
 
 
+def crop(image, new_size):
+    if type(image) == np.ndarray:
+        size = image.shape[:2]
+        if size[0] - new_size[0] > 0:
+            image = image[size[0] - new_size[0]]
+        if size[1] - new_size[1] > 0:
+            image = image[:, size[1] - new_size[1]]
+    else:
+        size = image.shape[-2:]
+        if size[0] - new_size[0] > 0:
+            image = image[..., size[0] - new_size[0], :]
+        if size[1] - new_size[1] > 0:
+            image = image[..., size[1] - new_size[1]]
+    return image
+
+
 def fourier_gradients(images):
     if type(images) == np.ndarray:
         return fourier_gradients_np(images)
@@ -60,20 +76,25 @@ def fourier_gradients(images):
 def fourier_gradients_np(images):
     if len(images.shape) == 2:
         images = images[..., None]  # to handle BW images as RGB ones
+    ## Find fast size for FFT
+    h, w = images.shape[:2]
+    h_fast = scipy.fft.next_fast_len(h)
+    w_fast = scipy.fft.next_fast_len(w)
     ## compute FT
-    U = fftpack.fft2(images, axes=(0, 1))
-    U = fftpack.fftshift(U, axes=(0, 1))
+    U = scipy.fft.fft2(images, s=(h_fast, w_fast), axes=(0, 1))
+    U = scipy.fft.fftshift(U, axes=(0, 1))
     ## Create the freqs components
-    H, W = images.shape[:2]
-    freqh = (np.arange(0, H, dtype=np.float32) - H // 2)[:, None, None] / H
-    freqw = (np.arange(0, W, dtype=np.float32) - W // 2)[None, :, None] / W
+    freqh = (np.arange(0, h_fast, dtype=np.float32) - h_fast // 2)[:, None, None] / h_fast
+    freqw = (np.arange(0, w_fast, dtype=np.float32) - w_fast // 2)[None, :, None] / w_fast
     ## Compute gradients in Fourier domain
     gxU = 2 * np.pi * freqw * (-np.imag(U) + 1j * np.real(U))
-    gxU = fftpack.ifftshift(gxU, axes=(0, 1))
-    gxu = np.real(fftpack.ifft2(gxU, axes=(0, 1)))
+    gxU = scipy.fft.ifftshift(gxU, axes=(0, 1))
+    gxu = np.real(scipy.fft.ifft2(gxU, axes=(0, 1)))
+    gxu = crop(gxu, (h, w))
     gyU = 2 * np.pi * freqh * (-np.imag(U) + 1j * np.real(U))
-    gyU = fftpack.ifftshift(gyU, axes=(0, 1))
-    gyu = np.real(fftpack.ifft2(gyU, axes=(0, 1)))
+    gyU = scipy.fft.ifftshift(gyU, axes=(0, 1))
+    gyu = np.real(scipy.fft.ifft2(gyU, axes=(0, 1)))
+    gyu = crop(gyu, (h, w))
     if images.shape[-1] == 1:
         return np.squeeze(gxu, -1), np.squeeze(gyu, -1)
     else:
@@ -81,22 +102,26 @@ def fourier_gradients_np(images):
 
 
 def fourier_gradients_torch(images):
+    ## Find fast size for FFT
+    h, w = images.shape[-2:]
+    h_fast = scipy.fft.next_fast_len(h)
+    w_fast = scipy.fft.next_fast_len(w)
     ## compute FT
-    U = torch.fft.fft2(images)
+    U = torch.fft.fft2(images, s=(h_fast, w_fast))
     U = torch.fft.fftshift(U, dim=(-2, -1))
     ## Create the freqs components
-    H, W = images.shape[-2:]
-    freqh = (torch.arange(0, H, device=images.device) - H // 2)[None, None, :, None] / H
-    freqw = (torch.arange(0, W, device=images.device) - W // 2)[None, None, None, :] / W
+    freqh = (torch.arange(0, h_fast, device=images.device) - h_fast // 2)[None, None, :, None] / h_fast
+    freqw = (torch.arange(0, w_fast, device=images.device) - w_fast // 2)[None, None, None, :] / w_fast
     ## Compute gradients in Fourier domain
     gxU = 2 * np.pi * freqw * (-torch.imag(U) + 1j * torch.real(U))
     gxU = torch.fft.ifftshift(gxU, dim=(-2, -1))
     gxu = torch.real(torch.fft.ifft2(gxU))
+    gxu = crop(gxu, (h_fast, w_fast))
     gyU = 2 * np.pi * freqh * (-torch.imag(U) + 1j * torch.real(U))
     gyU = torch.fft.ifftshift(gyU, dim=(-2, -1))
     gyu = torch.real(torch.fft.ifft2(gyU))
+    gyu = crop(gyu, (h_fast, w_fast))
     return gxu, gyu
-
 
 
 ### From here, taken from https://github.com/cszn/USRNet/blob/master/utils/utils_deblur.py
@@ -192,5 +217,5 @@ def psf2otf(psf, shape=None):
     for axis, axis_size in enumerate(inshape):
         psf = np.roll(psf, -int(axis_size / 2), axis=axis)
     # Compute the OTF
-    otf = fftpack.fft2(psf, axes=(0, 1))
+    otf = scipy.fft.fft2(psf, axes=(0, 1))
     return otf
