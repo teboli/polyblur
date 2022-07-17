@@ -6,6 +6,7 @@ import scipy.fft
 
 def gaussian_filter(sigma, theta, shift=np.array([0.0, 0.0]), k_size=np.array([15, 15])):
     """"
+    Returns a generalized 2D gaussian filter with eigenvalues sigma and angle theta
     # modified version of https://github.com/assafshocher/BlindSR_dataset_generator
     # Kai Zhang
     """
@@ -43,6 +44,9 @@ def gaussian_filter(sigma, theta, shift=np.array([0.0, 0.0]), k_size=np.array([1
 
 
 def dirac(dims):
+    """
+    Returns a kernel of size dims with a centered dirac
+    """
     kernel = np.zeros(dims)
     hh = dims[0] // 2
     hw = dims[1] // 2
@@ -54,19 +58,25 @@ def crop(image, new_size):
     if type(image) == np.ndarray:
         size = image.shape[:2]
         if size[0] - new_size[0] > 0:
-            image = image[size[0] - new_size[0]]
+            image = image[:new_size[0]]
         if size[1] - new_size[1] > 0:
-            image = image[:, size[1] - new_size[1]]
+            image = image[:, : new_size[1]]
     else:
         size = image.shape[-2:]
         if size[0] - new_size[0] > 0:
-            image = image[..., size[0] - new_size[0], :]
+            image = image[..., :new_size[0], :]
         if size[1] - new_size[1] > 0:
-            image = image[..., size[1] - new_size[1]]
+            image = image[..., :new_size[1]]
     return image
 
 
 def fourier_gradients(images):
+    """
+    Compute the image gradients using Fourier interpolation as in Eq. (21a) and (21b)
+        :param images: (H,W) or (H,W,3) np.array or (B,C,H,W) torch.tensor
+        :return grad_x, grad_y: tuple of 2 images of same dimensions as images that
+                                are the vertical and horizontal gradients
+    """
     if type(images) == np.ndarray:
         return fourier_gradients_np(images)
     else:
@@ -74,6 +84,12 @@ def fourier_gradients(images):
 
 
 def fourier_gradients_np(images):
+    """
+    (numpy) Compute the image gradients using Fourier interpolation as in Eq. (21a) and (21b)
+        :param images: (H,W) or (H,W,3) np.array 
+        :return grad_x, grad_y: tuple of 2 images of same dimensions as images that
+                                are the vertical and horizontal gradients
+    """
     if len(images.shape) == 2:
         images = images[..., None]  # to handle BW images as RGB ones
     ## Find fast size for FFT
@@ -102,6 +118,12 @@ def fourier_gradients_np(images):
 
 
 def fourier_gradients_torch(images):
+    """
+    (pytorch) Compute the image gradients using Fourier interpolation as in Eq. (21a) and (21b)
+        :param images: (B,C,H,W) torch.tensor
+        :return grad_x, grad_y: tuple of 2 images of same dimensions as images that
+                                are the vertical and horizontal gradients
+    """
     ## Find fast size for FFT
     h, w = images.shape[-2:]
     h_fast = scipy.fft.next_fast_len(h)

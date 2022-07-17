@@ -14,7 +14,7 @@ from scipy import signal, ndimage, fftpack
 
 
 #####################################################
-#############  Numpy/Pytorch routine  ###############
+########### Main Numpy/Pytorch routines #############
 #####################################################
 
 
@@ -22,7 +22,7 @@ from scipy import signal, ndimage, fftpack
 def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2, ker_size=25, remove_halo=False,
              edgetaping=False, prefiltering=False, discard_saturation=False, multichannel_kernel=False):
     """
-    Functional implementation of Polyblur.
+    Meta Functional implementation of Polyblur.
     :param img: (H,W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the blurry image(s)
     :param n_iter: int, number of polyblur iteration
     :param c: float, slope of std estimation model (C in the main paper)
@@ -61,9 +61,16 @@ def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigm
 
 
 def edge_aware_filtering(img, sigma_s, sigma_r):
-        img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s)
-        img_noise = img - img_smoothed
-        return img_smoothed, img_noise
+    """
+    Separate img into smooth and detail (noise) components using the the edge aware smoothing. (Alg.4 and Alg.6)
+    :param img: (H,W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the input image(s)
+    :param sigma_r: float, regularization parameter for domain transform
+    :param sigma_s: float, smoothness parameter for domain transform
+    :return: img_smoothed, img_noise: np.arrays or torch.tensors of same size as img, the smooth and noise components of img
+    """
+    img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s)
+    img_noise = img - img_smoothed
+    return img_smoothed, img_noise
 
 
 def inverse_filtering_rank3(img, kernel, alpha=2, beta=3, correlate=False, remove_halo=False, do_edgetaper=False, grad_img=None):
@@ -85,6 +92,17 @@ def inverse_filtering_rank3(img, kernel, alpha=2, beta=3, correlate=False, remov
 
 
 def compute_polynomial(Y, K, C, alpha, b):
+    """
+    Implements in the fourier domain the polynomial deconvolution filter (Deconvolution Alg.4) 
+    using the polynomial approximation of Eq. (27)
+    :param Y: (H,W,3) np.array or (B,C,H,W) torch.tensor, the FFT of the blurry image(s)
+    :param K: (h,w,3) np.array or (B,C,h,w) torch.tensor, the FFT of the blur kernel(s)
+    :param alpha: float, mid frequencies parameter for deblurring
+    :param beta: float, high frequencies parameter for deblurring
+    :return np.array or torch.tensor of same size as Y, the FFT of the deblurred image(s)
+    """
+    # C implements the pure phase filter described in the Polyblur article 
+    # needed to deblur non symmetic kernels. For Gaussian kernels (symmetric) it has no effect.
     a3 = alpha / 2 - b + 2;
     a2 = 3 * b - alpha - 6;
     a1 = 5 - 3 * b + alpha / 2
@@ -97,6 +115,12 @@ def compute_polynomial(Y, K, C, alpha, b):
 
 
 def halo_masking(img, imout, grad_img=None):
+    """
+    Halo removal processing. Detects gradient inversions between input and deblurred image replaces them in the output (Alg.5)
+    :param img: (H,W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the blurry image(s)
+    :param imout: (H,W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the deblurred image(s)
+    :return  np.array or torch.tensor of same size as img, the halo corrected image(s)
+    """
     if grad_img is None:
         grad_x, grad_y = fourier_gradients(img)
     else:
@@ -112,7 +136,24 @@ def halo_masking(img, imout, grad_img=None):
     return z * img + (1 - z) * imout
 
 
+
+#####################################################
+######### Specific Numpy/Pytorch routines ###########
+#####################################################
+
+
 def inverse_filtering_rank3_np(img, kernel, alpha=2, b=4, correlate=False, remove_halo=False, do_edgetaper=False, grad_img=None):
+    """
+    (numpy) Deconvolution with approximate inverse filter parameterized by alpha and beta. (Deconvolution Alg.4, EdgeAwareFiltering is in Alg.1)
+    :param img: (H,W) or (H,W,3) np.array, the blurry image(s)
+    :param kernel: (h,w) or (h,w,3) np.array, the blur kernel(s)
+    :param alpha: float, mid frequencies parameter
+    :param beta: float, high frequencies parameter
+    :param correlate: bool, deconvolving with a correlation or not
+    :param masking: bool, using or not halo removal masking
+    :param do_edgetaper bool, using or not edgetaping border preprocessing for deblurring
+    :return np.array or torch.tensor of same size as img, the deblurred image(s)
+    """
     ## Handling the grayscale case
     if img.ndim == 2:
         img = img[..., None]
@@ -150,6 +191,17 @@ def inverse_filtering_rank3_np(img, kernel, alpha=2, b=4, correlate=False, remov
 
 
 def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=4, correlate=False, remove_halo=False, do_edgetaper=False, grad_img=None):
+    """
+    Deconvolution with approximate inverse filter parameterized by alpha and beta. (Deconvolution Alg.4, EdgeAwareFiltering is in Alg.1)
+    :param img: (B,C,H,W) torch.tensor, the blurry image(s)
+    :param kernel: (B,C,h,w) torch.tensor, the blur kernel(s)
+    :param alpha: float, mid frequencies parameter
+    :param beta: float, high frequencies parameter
+    :param correlate: bool, deconvolving with a correlation or not
+    :param masking: bool, using or not halo removal masking
+    :param do_edgetaper bool, using or not edgetaping border preprocessing for deblurring
+    :return np.array or torch.tensor of same size as img, the deblurred image(s)
+    """
     if correlate:
         kernel = torch.rot90(kernel, k=2, dims=(-2, -1))
     ## Padding
