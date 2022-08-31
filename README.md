@@ -25,7 +25,7 @@ The Pytorch implementation of this code runs **ONLY** with torch 1.10+
 versions (because of torch.fft for the computation of the gradients with the pytorch implementation).
 
 Once done, you can test the blind deblurring technique with
-> python main.py --impath peacock_defocus.png --N 3 --alpha 6 --beta 1
+> python main.py --impath ./pictures/peacock_defocus.png --N 3 --alpha 6 --beta 1
 
 You can modify several parameters, e.g. the number of Polyblur iterations and
 the deconvolution filter's parameters alpha and beta
