@@ -2,16 +2,19 @@ import os
 import torch
 from skimage import img_as_float32, img_as_ubyte, io
 import matplotlib.pyplot as plt
-import deblurring
-import utils
+from polyblur import PolyblurDeblurring
+from polyblur import utils
 import time
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+# device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
 
 
 def main():
+    print('Will run on device: %s' % device)
+
     ## Synthetic
-    imblur = img_as_float32(plt.imread('peacock_defocus.png'))
+    imblur = img_as_float32(plt.imread('./pictures/peacock_defocus.png'))
 
     # blur estimation options
     c = 0.362
@@ -32,8 +35,8 @@ def main():
     discard_saturation = False
 
     # blind deblurring
-    deblurrer = deblurring.Polyblur(patch_decomposition=patch_decomposition, patch_size=patch_size,
-                                    patch_overlap=patch_overlap, batch_size=batch_size)
+    deblurrer = PolyblurDeblurring(patch_decomposition=patch_decomposition, patch_size=patch_size,
+                                   patch_overlap=patch_overlap, batch_size=batch_size)
 
     imblur = utils.to_tensor(imblur).unsqueeze(0).to(device)
     start = time.time()

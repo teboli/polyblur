@@ -3,12 +3,12 @@ import torch
 import torch.fft
 import torch.nn as nn
 import torch.nn.functional as F
-from filters import fourier_gradients
+from .filters import fourier_gradients
 
-import edgetaper
-import filters
-import blur_estimation
-import domain_transform
+from . import edgetaper
+from . import filters
+from . import blur_estimation
+from . import domain_transform
 
 from scipy import signal, ndimage, fftpack
 
@@ -19,8 +19,8 @@ from scipy import signal, ndimage, fftpack
 
 
 
-def polyblur(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2, ker_size=25, remove_halo=False,
-             edgetaping=False, prefiltering=False, discard_saturation=False, multichannel_kernel=False):
+def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2, ker_size=25, remove_halo=False,
+                        edgetaping=False, prefiltering=False, discard_saturation=False, multichannel_kernel=False):
     """
     Functional implementation of Polyblur.
     :param img: (H,W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the blurry image(s)
@@ -178,7 +178,7 @@ def inverse_filtering_rank3_torch(img, kernel, alpha=2, b=4, correlate=False, re
 #####################################################
 
 
-class Polyblur(nn.Module):
+class PolyblurDeblurring(nn.Module):
     def __init__(self, patch_decomposition=False, patch_size=400, patch_overlap=0.25, batch_size=1):
         """
         A nn.Module wrapper of deblurring.polyblur with inner patch decomposition if processing large images
@@ -188,7 +188,7 @@ class Polyblur(nn.Module):
         :param patch_overlap: float, percentage of patch overlapping
         :param batch_size: int, number of patches processed at once in polyblur (for memory constraints)
         """
-        super(Polyblur, self).__init__()
+        super(PolyblurDeblurring, self).__init__()
         self.batch_size = batch_size
         self.patch_decomposition = patch_decomposition
         self.patch_size = (patch_size, patch_size)
@@ -252,10 +252,10 @@ class Polyblur(nn.Module):
                 ## Deblurring
                 if device is not None:
                     patches = patches.to(device)
-                patches_restored = polyblur(patches, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, ker_size=ker_size,
-                                            sigma_s=sigma_s, sigma_r=sigma_r, remove_halo=remove_halo, edgetaping=edgetaping,
-                                            prefiltering=prefiltering, discard_saturation=discard_saturation,
-                                            multichannel_kernel=multichannel_kernel)
+                patches_restored = polyblur_deblurring(patches, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, ker_size=ker_size,
+                                                       sigma_s=sigma_s, sigma_r=sigma_r, remove_halo=remove_halo, edgetaping=edgetaping,
+                                                       prefiltering=prefiltering, discard_saturation=discard_saturation,
+                                                       multichannel_kernel=multichannel_kernel)
                 if device is not None:
                     patches_restored = patches_restored.cpu()
 
@@ -269,10 +269,10 @@ class Polyblur(nn.Module):
             images_restored = images_restored.clamp(0.0, 1.0)
             images_restored = self.crop_with_old_size(images_restored, (h, w))
         else:
-            images_restored = polyblur(images, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, ker_size=ker_size,
-                                       sigma_s=sigma_s, sigma_r=sigma_r, remove_halo=remove_halo, edgetaping=edgetaping,
-                                       prefiltering=prefiltering, discard_saturation=discard_saturation,
-                                       multichannel_kernel=multichannel_kernel)
+            images_restored = polyblur_deblurring(images, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, ker_size=ker_size,
+                                                  sigma_s=sigma_s, sigma_r=sigma_r, remove_halo=remove_halo, edgetaping=edgetaping,
+                                                  prefiltering=prefiltering, discard_saturation=discard_saturation,
+                                                  multichannel_kernel=multichannel_kernel)
         return images_restored
 
     def build_window(self, image_size, window_type):

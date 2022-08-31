@@ -5,8 +5,8 @@ import torch.nn.functional as F
 from skimage import color, morphology
 from scipy import interpolate
 
-import utils
-from filters import gaussian_filter, fourier_gradients
+from .import utils
+from .filters import gaussian_filter, fourier_gradients
 
 
 ##############################################

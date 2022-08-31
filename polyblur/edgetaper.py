@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from scipy.signal import fftconvolve
 
-from filters import p2o
+from .filters import p2o
 
 ## Implementation from https://github.com/uschmidt83/fourier-deconvolution-network/blob/master/fdn_predict.py
 
