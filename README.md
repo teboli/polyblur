@@ -9,9 +9,9 @@ IEEE Transaction on Computational Imaging 2021 by Mauricio Delbracio, Ignacio Ga
 Damien Kelly and Peyman Milanfar. We provide Pytorch and Numpy non-official implementations reproducing the quantitative
 and qualitative results of the original paper.
 
-An analysis of the algorithm can be found in a companion IPOL paper
-whose online demo runs the code of this rep. If this code, or the IPOL
-paper and demo are useful to your research, please cite our paper (to appear)
+A description an analysis of the algorithm can be found in a companion IPOL paper:
+*Breaking down Polyblur: Fast blind Correction of Small Anisotropic Blurs* in Image Processing OnLine 2022 by Thomas Eboli, 
+Jean-Michel Morel and Gabriele Facciolo.
 
 ### Test
 
@@ -19,13 +19,14 @@ First install the requirements with
 > pip install requirements.txt
 
 The Pytorch implementation of this code runs **ONLY** with torch 1.10+ 
-versions (because of torch.fft for the computation of the gradients).
+versions (because of torch.fft for the computation of the gradients with the pytorch implementation).
 
 Once done, you can test the blind deblurring technique with
-> python main.py
+> python main.py --impath peacock_defocus.png --N 3 --alpha 6 --beta 1
 
 You can modify several parameters, e.g. the number of Polyblur iterations and
 the deconvolution filter's parameters alpha and beta
+
 
 ### Description
 
@@ -47,7 +48,7 @@ of the model, please run
 > python calibration_blur_parameters.py
 
 Below is an example of the predicted curves for 1% additive Gaussian noise. If you use the exact same implementation 
-of the gradients as in this repo, you should find something  like (0.371, -0.468) for the affine model parameters.
+of the gradients as in this repo, you should find something  like (0.362, -0.468) for the affine model parameters.
 You should first provide the path
 to the DVI2K validation set.
 

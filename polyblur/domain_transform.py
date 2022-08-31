@@ -3,14 +3,46 @@ import torch
 import math
 
 
+#########################################
+##### Main Numpy/Pytorch routine ########
+#########################################
+
+
 def recursive_filter(img, sigma_s=60, sigma_r=0.4, num_iterations=1, joint_image=None):
+    """
+    Meta-function for implementating of the edge aware smoothing with recursive filtering (EdgeAwareSmoothing Alg.6) from:
+        [Eduardo Simoes Lopes Gastal and Manuel M. Oliveira. Domain transform for edge-aware
+         image and video processing. ACM Transactions on Graphics (ToG), 30(4):69, 2011.]
+    :param img: (H,W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the input image(s)
+    :param sigma_r: float, regularization parameter for domain transform 
+    :param sigma_s: float, smoothness parameter for domain transform 
+    :param num_iterations: int, iterations
+    :param joint_image: (H,W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the guide image(s) (optional)
+    :return: img_smoothed: np.array or torch.tensor of same size as img, the smoothed image(s)
+    """
     if type(img) == np.ndarray:
         return recursive_filter_np(img, sigma_s, sigma_r, num_iterations, joint_image)
     else:
         return recursive_filter_torch(img, sigma_s, sigma_r, num_iterations, joint_image)
 
 
+#########################################
+##### Main Numpy/Pytorch routine ########
+#########################################
+
+
 def recursive_filter_np(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image=None):
+    """
+    (numpy) Implementation of the edge aware smoothing with recursive filtering (EdgeAwareSmoothing Alg.6) from:
+        [Eduardo Simoes Lopes Gastal and Manuel M. Oliveira. Domain transform for edge-aware
+         image and video processing. ACM Transactions on Graphics (ToG), 30(4):69, 2011.]
+    :param img: (H,W) or (H,W,3) np.array, the input image(s)
+    :param sigma_r: float, regularization parameter for domain transform 
+    :param sigma_s: float, smoothness parameter for domain transform 
+    :param num_iterations: int, iterations
+    :param joint_image: (H,W) or (H,W,3) np.array, the guide image(s) (optional)
+    :return: img_smoothed: np.array of same size as img, the smoothed image(s)
+    """
     if img.ndim == 2:
         img = img[..., None]
     I = np.array(img).astype(np.float32)
@@ -64,7 +96,22 @@ def recursive_filter_np(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_im
         return F
 
 
+
+#########################################
+########## Main Numpy routine ###########
+#########################################
+
+
 def transformed_domain_recursive_filter_horizontal_np(I, D, sigma):
+    """
+    (numpy) Implementation of the recursive 1D (horizontal) filtering (Recursive1DFilter Alg.7) used in the edge aware smoothing from:
+        [Eduardo Simoes Lopes Gastal and Manuel M. Oliveira. Domain transform for edge-aware
+         image and video processing. ACM Transactions on Graphics (ToG), 30(4):69, 2011.]
+    :param I: (H,W) or (H,W,3) np.array, the input image(s)
+    :param D: (H,W) or (H,W,3) np.array, the image of "distances(s)" used to control the diffusion
+    :param sigma: float, regularization parameter 
+    :return: img_smoothed: np.array of same size as img, the filtered image(s)
+    """
     # Feedback coefficient (Appendix of our paper).
     a = np.exp(-np.sqrt(2) / sigma)
 
@@ -87,6 +134,17 @@ def transformed_domain_recursive_filter_horizontal_np(I, D, sigma):
 
 
 def recursive_filter_torch(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image=None):
+    """
+    (pytorch) Implementation of the edge aware smoothing with recursive filtering (EdgeAwareSmoothing Alg.6) from:
+        [Eduardo Simoes Lopes Gastal and Manuel M. Oliveira. Domain transform for edge-aware
+         image and video processing. ACM Transactions on Graphics (ToG), 30(4):69, 2011.]
+    :param img: (B,C,H,W) torch.tensor, the input image(s)
+    :param sigma_r: float, regularization parameter for domain transform 
+    :param sigma_s: float, smoothness parameter for domain transform 
+    :param num_iterations: int, iterations
+    :param joint_image: (B,C,H,W) torch.tensor, the guide image(s) (optional)
+    :return: img_smoothed: torch.tensor of same size as img, the smoothed image(s)
+    """
     I = img
 
     if joint_image is None:
@@ -120,7 +178,6 @@ def recursive_filter_torch(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint
 
     sigma_H = sigma_s
 
-    import time
     for i in range(num_iterations):
         # Compute the sigma value for this iterations (Equation 14 of our paper)
         sigma_H_i = sigma_H * math.sqrt(3) * 2**(N - (i + 1)) / math.sqrt(4**N - 1)
@@ -134,7 +191,22 @@ def recursive_filter_torch(img, sigma_s=60, sigma_r=0.4, num_iterations=3, joint
     return F
 
 
+
+#########################################
+######### Main Pytorch routine ##########
+#########################################
+
+
 def transformed_domain_recursive_filter_horizontal_torch(I, D, sigma):
+    """
+    (pytorch) Implementation of the recursive 1D (horizontal) filtering (Recursive1DFilter Alg.7) used in the edge aware smoothing from:
+        [Eduardo Simoes Lopes Gastal and Manuel M. Oliveira. Domain transform for edge-aware
+         image and video processing. ACM Transactions on Graphics (ToG), 30(4):69, 2011.]
+    :param I: (B,C,H,W) torch.tensor, the input image(s)
+    :param D: (B,C,H,W) torch.tensor, the image of "distances(s)" used to control the diffusion
+    :param sigma: float, regularization parameter 
+    :return: img_smoothed: torch.tensor of same size as img, the filtered image(s)
+    """
     # Feedback coefficient (Appendix of our paper).
     a = math.exp(-math.sqrt(2) / sigma)
 
