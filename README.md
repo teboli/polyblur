@@ -1,6 +1,6 @@
 # Pytorch and Numpy Non-official Implementation of Polyblur
 
-| <img src="./peacock_defocus.png" width="360px"/> | <img src="results/peacock_restored_alpha_6_beta_1.png" width="360px"/> |
+| <img src="./pictures/peacock_defocus.png" width="360px"/> | <img src="results/peacock_restored_alpha_6_beta_1.png" width="360px"/> |
 |:------------------------------------------------:|:----------------------------------------------------------------------:|
 |        <i>Slightly out-of-focus image</i>        |                 <i>Deblurred result with Polyblur</i>                  |
 
@@ -18,6 +18,9 @@ Jean-Michel Morel and Gabriele Facciolo.
 First install the requirements with
 > pip install requirements.txt
 
+Second install the module with
+> python setup.py install
+
 The Pytorch implementation of this code runs **ONLY** with torch 1.10+ 
 versions (because of torch.fft for the computation of the gradients with the pytorch implementation).
 
@@ -30,13 +33,16 @@ the deconvolution filter's parameters alpha and beta
 
 ### Description
 
+After installation, the package is imported to any project with
+> import polyblur
+
 The code contains *functional* and *module* blocks: The first is found in the path
-> deblurring.polyblur
+> polyblur.polyblur_deblurring
 
 and is agnostic to (H,W,C) or (H,W) Numpy arrays or (B,C,H,W) Pytorch tensors. The latter inherits from torch.nn.module 
 and either call deblurring.polyblur on the whole image or overlapping patches. This module is called
 with 
-> deblurring.Polyblur
+> polyblur.PolyblurDeblurring
 
 
 
