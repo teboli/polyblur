@@ -1,4 +1,4 @@
-# Pytorch and Numpy Non-official Implementation of Polyblur
+# Non-official Python Implementation of Polyblur
 
 | <img src="./pictures/peacock_defocus.png" width="360px"/> | <img src="results/peacock_restored_alpha_6_beta_1.png" width="360px"/> |
 |:------------------------------------------------:|:----------------------------------------------------------------------:|
