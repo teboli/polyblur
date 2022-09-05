@@ -66,7 +66,7 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
         impred = impred.clip(0.0, 1.0)
 
     if flag_numpy:
-        return utils.to_array(img)
+        return utils.to_array(impred)
     else:
         return impred
 
