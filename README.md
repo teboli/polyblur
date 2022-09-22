@@ -16,7 +16,7 @@ Jean-Michel Morel and Gabriele Facciolo.
 ### Test
 
 First install the requirements with
-> pip install requirements.txt
+> pip install -r requirements.txt
 
 Second install the module with
 > python setup.py install
@@ -63,8 +63,14 @@ to the DVI2K validation set.
 |                 <i>Principal blur direction</i>                  |                  <i>Orthogonal blur direction</i>                  |
 
 
+### Roadmap
+
+This code reproduces the results of the TCI'22 article but is not as fast. Even though it is not the
+goal of this repository, here are some elements I will enhance in a near future:
+* polybur.domain_transform should be implemented with a C++ or CUDA-based normalized convolution to be faster.
+* the convolution are too slow with FFT. I should implement it with separable filters as in the TCI paper.
+
 
 ### Contact 
 
 If you encounter any problem with the code, please contact me at <thomas.eboli@ens-paris-saclay.fr>.
-

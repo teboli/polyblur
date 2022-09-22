@@ -1,0 +1,4 @@
+polyblur.egg-info
+dist/
+build/
+**/__pycache__
