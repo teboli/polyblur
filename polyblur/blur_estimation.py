@@ -17,7 +17,7 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
                                    discard_saturation=False, multichannel=False):
     """
     Compute an approximate Gaussian filter from a RGB or grayscale image.
-        :param img: (B,3,H,W) or (B,1,H,W) tensor, the image
+        :param img: (B,C,H,W) or (B,1,H,W) tensor, the image
         :param q: the quantile value used for image normalization
         :param n_angles: the number of angles to compute the directional gradients
         :param n_interpolated_angles: the number of angles to interpolate the directional gradients
@@ -26,20 +26,18 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
         :param ker_size: the size of the kernel support
         :param discard_saturation: taking care of saturated areas in gradient computation
         :param multichannel: predicting a kernel per channel or on grayscale image
-        :return: kernel: the (B,1,ker_size,ker_size) approximate Gaussian kernel
+        :return: kernel: the (B,C,ker_size,ker_sizr) or (B,1,ker_size,ker_size) local Gaussian kernels
     """
     # if img is color or multichannel is False (same kernel for each color channel), go to grayscale
     if imgc.shape[1] == 3 or not multichannel:
-        imgc = imgc.mean(dim=1, keepdims=True)
+        imgc = imgc.mean(dim=1, keepdims=True)  # BxCxHxW becomes Bx1xHxW
 
+    # kernel estimation
     kernel = torch.zeros(*imgc.shape[:2], ker_size, ker_size, device=imgc.device).float()  # BxCxhxw or Bx1xhxw
     for channel in range(imgc.shape[1]):
         img = imgc[:, channel:channel+1]  # Bx1xHxW
-        # (optional) remove saturated areas
-        if discard_saturation:
-            mask = img > 0.99
-        else:
-            mask = torch.zeros_like(img).bool()
+        # (Optional) remove saturated areas
+        mask = get_saturation_mask(img, discard_saturation)
         # normalized image
         img_normalized = normalize(img, q=q)
         # compute the image gradients
@@ -54,6 +52,14 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
         # create the blur kernel
         kernel[:, channel:channel+1] = create_gaussian_filter(thetas, sigma, rho, ksize=ker_size)
     return kernel
+
+
+def get_saturation_mask(img, discard_saturation, threshold=0.99):
+    if discard_saturation:
+        mask = img > threshold
+    else:
+        mask = img > -1  # every entry is True
+    return mask 
 
 
 def normalize(images, q=0.0001):

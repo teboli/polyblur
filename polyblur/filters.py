@@ -55,18 +55,11 @@ def dirac(dims):
 
 
 def crop(image, new_size):
-    if type(image) == np.ndarray:
-        size = image.shape[:2]
-        if size[0] - new_size[0] > 0:
-            image = image[:new_size[0]]
-        if size[1] - new_size[1] > 0:
-            image = image[:, : new_size[1]]
-    else:
-        size = image.shape[-2:]
-        if size[0] - new_size[0] > 0:
-            image = image[..., :new_size[0], :]
-        if size[1] - new_size[1] > 0:
-            image = image[..., :new_size[1]]
+    size = image.shape[-2:]
+    if size[0] - new_size[0] > 0:
+        image = image[..., :new_size[0], :]
+    if size[1] - new_size[1] > 0:
+        image = image[..., :new_size[1]]
     return image
 
 
@@ -91,11 +84,11 @@ def fourier_gradients(images):
     gxU = 2 * np.pi * freqw * (-torch.imag(U) + 1j * torch.real(U))
     gxU = torch.fft.ifftshift(gxU, dim=(-2, -1))
     gxu = torch.real(torch.fft.ifft2(gxU))
-    gxu = crop(gxu, (h_fast, w_fast))
+    gxu = crop(gxu, (h, w))
     gyU = 2 * np.pi * freqh * (-torch.imag(U) + 1j * torch.real(U))
     gyU = torch.fft.ifftshift(gyU, dim=(-2, -1))
     gyu = torch.real(torch.fft.ifft2(gyU))
-    gyu = crop(gyu, (h_fast, w_fast))
+    gyu = crop(gyu, (h, w))
     return gxu, gyu
 
 

@@ -11,7 +11,7 @@ from polyblur import utils, filters
 import time
 
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
 #### Argparser
 
@@ -42,7 +42,7 @@ parser.add_argument('--sigma_n', type=float, default=0.01, help='image noise sig
 parser.add_argument('--N', type=int, default=3, help='polyblur iterations')
 parser.add_argument('--alpha', type=int, default=6, help='polyblur alpha parameter')
 parser.add_argument('--beta', type=int, default=1, help='polyblur beta parameter')
-parser.add_argument('--do_prefiltering', type=str2bool, default=True, help='apply noise prefiltering')
+parser.add_argument('--do_prefiltering', type=str2bool, default=False, help='apply noise prefiltering')
 parser.add_argument('--do_halo_removal', type=str2bool, default=True, help='use halo removal correction')
 
 ## Patch parameters
