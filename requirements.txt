@@ -2,5 +2,5 @@ seaborn
 scikit-image
 scipy
 tqdm
-glob
+glob2
 torch==1.10

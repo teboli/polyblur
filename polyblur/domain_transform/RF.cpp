@@ -67,7 +67,7 @@ torch::Tensor recursive_filter(torch::Tensor img,
     auto dVdy = 1 + sigma_s / sigma_r * dIdy;
 
     // The vertical pass is performed using a transposed image
-    dVdy = dVdy.transpose(0, 1);
+    dVdy = dVdy.transpose(1, 2);
 
     // Perform filtering
     int N = num_iterations;
