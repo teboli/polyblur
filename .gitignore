@@ -2,3 +2,5 @@ polyblur.egg-info
 dist/
 build/
 **/__pycache__
+**/*.png
+**/*.jpg
