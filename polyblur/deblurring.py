@@ -8,7 +8,8 @@ from .filters import fourier_gradients
 from . import edgetaper
 from . import filters
 from . import blur_estimation
-from . import domain_transform
+# from . import domain_transform
+import fast_domain_transform
 from . import utils
 
 from scipy import signal, ndimage, fftpack
@@ -20,7 +21,7 @@ from scipy import signal, ndimage, fftpack
 
 
 
-def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2, ker_size=25, remove_halo=False,
+def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2.0, ker_size=25, remove_halo=False,
                         edgetaping=False, prefiltering=False, discard_saturation=False, multichannel_kernel=False):
     """
     Meta Functional implementation of Polyblur.
@@ -79,7 +80,8 @@ def edge_aware_filtering(img, sigma_s, sigma_r):
     :param sigma_s: float, smoothness parameter for domain transform
     :return: img_smoothed, img_noise: torch.tensors of same size as img, the smooth and noise components of img
     """
-    img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s)
+    # img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s)
+    img_smoothed = fast_domain_transform.recursive_filter(img, sigma_r, sigma_s, 3)
     img_noise = img - img_smoothed
     return img_smoothed, img_noise
 

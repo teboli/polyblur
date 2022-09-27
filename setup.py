@@ -1,7 +1,14 @@
-import setuptools
+from setuptools import setup, Extension
+from torch.utils import cpp_extension
 
 
-setuptools.setup(
+# Install the intermediate domain transform module
+setup(name='fast_domain_transform',
+        ext_modules=[cpp_extension.CppExtension('fast_domain_transform', ['./polyblur/domain_transform/RF.cpp'])],
+        cmdclass={'build_ext': cpp_extension.BuildExtension})
+
+# Install the main polyblur module
+setup(
     name='polyblur',
     version="1.0.0",
     author="Thomas Eboli",

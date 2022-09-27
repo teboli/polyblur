@@ -58,7 +58,7 @@ def get_saturation_mask(img, discard_saturation, threshold=0.99):
     if discard_saturation:
         mask = img > threshold
     else:
-        mask = img > -1  # every entry is True
+        mask = img > 1  # every entry is False
     return mask 
 
 

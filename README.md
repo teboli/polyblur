@@ -18,7 +18,7 @@ Jean-Michel Morel and Gabriele Facciolo.
 First install the requirements with
 > pip install -r requirements.txt
 
-Second install the module with
+Second, install the main module with
 > python setup.py install
 
 The Pytorch implementation of this code runs **ONLY** with torch 1.10+ 
