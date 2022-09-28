@@ -86,18 +86,67 @@ def edge_aware_filtering(img, sigma_s, sigma_r):
     return img_smoothed, img_noise
 
 
-def compute_polynomial(Y, K, C, alpha, b):
+def compute_polynomial(img, kernel, alpha, b, method='fft'):
+    if method == 'fft':
+        return compute_polynomial_fft(img, kernel, alpha, b)
+    elif method == 'direct':
+        return compute_polynomial_direct(img, kernel, alpha, b)
+    else:
+        raise('%s not implemented' % method)
+
+
+def convolve2d(img, kernel, mode='same'):
+    """
+    A per kernel wrapper for torch.nn.functional.conv2d
+    :param img: (B,C,H,W) torch.tensor, the input images
+    :param kernel: (B,C,h,w) or (B,1,h,w) torch.tensor, the blur kernels
+    :param mode: string, can be 'valid' or 'same' 
+    :return imout: (B,C,H,W) torch.tensor, the filtered images
+    """
+    if kernel.shape[1] == img.shape[1]:
+        return F.conv2d(img, kernel, groups=img.shape[1], padding=mode)
+    else:
+        imout = [F.conv2d(img[:,c:c+1], kernel, padding=mode) for c in range(img.shape[1])]
+        return torch.cat(imout, dim=1)
+
+
+def compute_polynomial_direct(img, kernel, alpha, b):
+    """
+    Implements in the time domain the polynomial deconvolution filter (Deconvolution Alg.4) 
+    using the polynomial approximation of Eq. (27)
+    :param img: (B,C,H,W) torch.tensor, the blurry image(s)
+    :param kernel: (B,C,h,w) or (B,1,h,w) torch.tensor, the blur kernel(s)
+    :param alpha: float, mid frequencies parameter for deblurring
+    :param beta: float, high frequencies parameter for deblurring
+    :return torch.tensor of same size as img, the deblurred image(s)
+    """
+    a3 = alpha/2 - b + 2
+    a2 = 3 * b - alpha - 6
+    a1 = 5 - 3 * b + alpha / 2
+    imout = a3 * img
+    imout = convolve2d(imout, kernel) + a2 * img
+    imout = convolve2d(imout, kernel) + a1 * img
+    imout = convolve2d(imout, kernel) + b * img
+    return imout
+
+
+def compute_polynomial_fft(img, kernel, alpha, b):
     """
     Implements in the fourier domain the polynomial deconvolution filter (Deconvolution Alg.4) 
     using the polynomial approximation of Eq. (27)
-    :param Y: (B,C,H,W) torch.tensor, the FFT of the blurry image(s)
-    :param K: (B,C,h,w) torch.tensor, the FFT of the blur kernel(s)
+    :param Y: (B,C,H,W) torch.tensor, the blurry image(s)
+    :param K: (B,C,h,w)  or (B,1,h,w) torch.tensor, the blur kernel(s)
     :param alpha: float, mid frequencies parameter for deblurring
     :param beta: float, high frequencies parameter for deblurring
-    :return torch.tensor of same size as Y, the FFT of the deblurred image(s)
+    :return torch.tensor of same size as img, the deblurred image(s)
     """
-    # C implements the pure phase filter described in the Polyblur article 
-    # needed to deblur non symmetic kernels. For Gaussian kernels (symmetric) it has no effect.
+    ## Go to Fourier domain
+    h, w = img.shape[-2:]
+    Y = torch.fft.fft2(img, dim=(-2, -1))
+    K = filters.p2o(kernel, (h, w))  # from NxCxhxw to NxCxHxW
+    C = torch.conj(K) / (torch.abs(K) + 1e-8)
+    ## C implements the pure phase filter described in the Polyblur article 
+    ## needed to deblur non symmetic kernels. For Gaussian kernels (symmetric) it has no effect.
     a3 = alpha / 2 - b + 2;
     a2 = 3 * b - alpha - 6;
     a1 = 5 - 3 * b + alpha / 2
@@ -106,7 +155,8 @@ def compute_polynomial(Y, K, C, alpha, b):
     X = K * X + a2 * Y
     X = K * X + a1 * Y
     X = K * X + b * Y
-    return X
+    ## Go back to temporal domain
+    return torch.real(torch.fft.ifft2(X, dim=(-2, -1)))
 
 
 def halo_masking(img, imout, grad_img=None):
@@ -127,7 +177,8 @@ def halo_masking(img, imout, grad_img=None):
     return z * img + (1 - z) * imout
 
 
-def inverse_filtering_rank3(img, kernel, alpha=2, b=4, correlate=False, remove_halo=False, do_edgetaper=False, grad_img=None):
+def inverse_filtering_rank3(img, kernel, alpha=2, b=4, correlate=False, remove_halo=False, 
+                            do_edgetaper=False, grad_img=None, method_polynomial='direct'):
     """
     Deconvolution with approximate inverse filter parameterized by alpha and beta. (Deconvolution Alg.4, EdgeAwareFiltering is in Alg.1)
     :param img: (B,C,H,W) torch.tensor, the blurry image(s)
@@ -141,19 +192,14 @@ def inverse_filtering_rank3(img, kernel, alpha=2, b=4, correlate=False, remove_h
     """
     if correlate:
         kernel = torch.rot90(kernel, k=2, dims=(-2, -1))
-    ## Padding
+    ## Pad
     ks = kernel.shape[-1] // 2
     img = F.pad(img, (ks, ks, ks, ks), mode='replicate')
     if do_edgetaper:
         img = edgetaper.edgetaper(img, kernel)  # for better edge handling
-    ## Go to Fourier domain
-    h, w = img.shape[-2:]
-    Y = torch.fft.fft2(img, dim=(-2, -1))
-    K = filters.p2o(kernel, (h, w))  # from NxCxhxw to NxCxHxW
-    C = torch.conj(K) / (torch.abs(K) + 1e-8)
-    ## Compute compensation filter
-    X = compute_polynomial(Y, K, C, alpha, b)
-    imout = torch.real(torch.fft.ifft2(X, dim=(-2, -1)))
+    ## Deblurring
+    imout = compute_polynomial(img, kernel, alpha, b, method=method_polynomial)
+    ## Crop
     imout = imout[..., ks:-ks, ks:-ks]
     img = img[..., ks:-ks, ks:-ks]
     ## Mask deblurring halos
