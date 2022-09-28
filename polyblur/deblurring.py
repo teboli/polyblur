@@ -22,7 +22,7 @@ from scipy import signal, ndimage, fftpack
 
 
 def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2.0, ker_size=25, remove_halo=False,
-                        edgetaping=False, prefiltering=False, discard_saturation=False, multichannel_kernel=False):
+                        edgetaping=False, prefiltering=False, discard_saturation=False, multichannel_kernel=False, method='fft'):
     """
     Meta Functional implementation of Polyblur.
     :param img: (H, W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the blurry image(s)
@@ -39,6 +39,7 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
     :param prefiltering: bool, using or not smooth and textured images split to prevent noise magnification
     :param discard_saturation: bool, should we discard saturated pixels? (recommanded)
     :param multichannel_kernel: bool, predicting a kernel common to each color channel or a single kernel per color channel
+    :param method: string, weither running the convolution in time or fourier domain
     :return: impred: np.array or torch.tensor of same size as img, the restored image(s)
     """
     if type(img) == np.ndarray:
@@ -59,11 +60,11 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
         if prefiltering:
             impred, impred_noise = edge_aware_filtering(impred, sigma_s, sigma_r)
             impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=beta, remove_halo=remove_halo,
-                                             do_edgetaper=edgetaping, grad_img=grad_img)
+                                             do_edgetaper=edgetaping, grad_img=grad_img, method=method)
             impred = impred + impred_noise
         else:
             impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=beta, remove_halo=remove_halo,
-                                             do_edgetaper=edgetaping, grad_img=grad_img)
+                                             do_edgetaper=edgetaping, grad_img=grad_img, method=method)
         impred = impred.clip(0.0, 1.0)
 
     if flag_numpy:
@@ -95,21 +96,6 @@ def compute_polynomial(img, kernel, alpha, b, method='fft'):
         raise('%s not implemented' % method)
 
 
-def convolve2d(img, kernel, mode='same'):
-    """
-    A per kernel wrapper for torch.nn.functional.conv2d
-    :param img: (B,C,H,W) torch.tensor, the input images
-    :param kernel: (B,C,h,w) or (B,1,h,w) torch.tensor, the blur kernels
-    :param mode: string, can be 'valid' or 'same' 
-    :return imout: (B,C,H,W) torch.tensor, the filtered images
-    """
-    if kernel.shape[1] == img.shape[1]:
-        return F.conv2d(img, kernel, groups=img.shape[1], padding=mode)
-    else:
-        imout = [F.conv2d(img[:,c:c+1], kernel, padding=mode) for c in range(img.shape[1])]
-        return torch.cat(imout, dim=1)
-
-
 def compute_polynomial_direct(img, kernel, alpha, b):
     """
     Implements in the time domain the polynomial deconvolution filter (Deconvolution Alg.4) 
@@ -124,9 +110,9 @@ def compute_polynomial_direct(img, kernel, alpha, b):
     a2 = 3 * b - alpha - 6
     a1 = 5 - 3 * b + alpha / 2
     imout = a3 * img
-    imout = convolve2d(imout, kernel) + a2 * img
-    imout = convolve2d(imout, kernel) + a1 * img
-    imout = convolve2d(imout, kernel) + b * img
+    imout = filters.convolve2d(imout, kernel) + a2 * img
+    imout = filters.convolve2d(imout, kernel) + a1 * img
+    imout = filters.convolve2d(imout, kernel) + b * img
     return imout
 
 
@@ -178,7 +164,7 @@ def halo_masking(img, imout, grad_img=None):
 
 
 def inverse_filtering_rank3(img, kernel, alpha=2, b=4, correlate=False, remove_halo=False, 
-                            do_edgetaper=False, grad_img=None, method_polynomial='direct'):
+                            do_edgetaper=False, grad_img=None, method='direct'):
     """
     Deconvolution with approximate inverse filter parameterized by alpha and beta. (Deconvolution Alg.4, EdgeAwareFiltering is in Alg.1)
     :param img: (B,C,H,W) torch.tensor, the blurry image(s)
@@ -188,6 +174,7 @@ def inverse_filtering_rank3(img, kernel, alpha=2, b=4, correlate=False, remove_h
     :param correlate: bool, deconvolving with a correlation or not
     :param masking: bool, using or not halo removal masking
     :param do_edgetaper bool, using or not edgetaping border preprocessing for deblurring
+    :param method string, weither running the convolution in time or fourier domain
     :return torch.tensor of same size as img, the deblurred image(s)
     """
     if correlate:
@@ -196,9 +183,9 @@ def inverse_filtering_rank3(img, kernel, alpha=2, b=4, correlate=False, remove_h
     ks = kernel.shape[-1] // 2
     img = F.pad(img, (ks, ks, ks, ks), mode='replicate')
     if do_edgetaper:
-        img = edgetaper.edgetaper(img, kernel)  # for better edge handling
+        img = edgetaper.edgetaper(img, kernel, method=method)  # for better edge handling
     ## Deblurring
-    imout = compute_polynomial(img, kernel, alpha, b, method=method_polynomial)
+    imout = compute_polynomial(img, kernel, alpha, b, method=method)
     ## Crop
     imout = imout[..., ks:-ks, ks:-ks]
     img = img[..., ks:-ks, ks:-ks]
@@ -234,7 +221,7 @@ class PolyblurDeblurring(nn.Module):
 
     def forward(self, images, n_iter=1, c=0.352, b=0.468, alpha=2, beta=4, sigma_s=2, ker_size=25, sigma_r=0.4,
                 remove_halo=False, edgetaping=False, prefiltering=False, discard_saturation=False,
-                multichannel_kernel=False, device=None):
+                multichannel_kernel=False, method='fft', device=None):
         if self.patch_decomposition:
             patch_size = self.patch_size
 
@@ -293,7 +280,7 @@ class PolyblurDeblurring(nn.Module):
                 patches_restored = polyblur_deblurring(patches, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, ker_size=ker_size,
                                                        sigma_s=sigma_s, sigma_r=sigma_r, remove_halo=remove_halo, edgetaping=edgetaping,
                                                        prefiltering=prefiltering, discard_saturation=discard_saturation,
-                                                       multichannel_kernel=multichannel_kernel)
+                                                       multichannel_kernel=multichannel_kernel, method=method)
                 if device is not None:
                     patches_restored = patches_restored.cpu()
 

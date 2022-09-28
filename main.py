@@ -44,6 +44,7 @@ parser.add_argument('--alpha', type=int, default=2, help='polyblur alpha paramet
 parser.add_argument('--beta', type=int, default=3, help='polyblur beta parameter')
 parser.add_argument('--do_prefiltering', type=str2bool, default=False, help='apply noise prefiltering')
 parser.add_argument('--do_halo_removal', type=str2bool, default=False, help='use halo removal correction')
+parser.add_argument('--do_edgetaping', type=str2bool, default=False, help='do edgetaper to better handle edges')
 
 ## Patch parameters
 parser.add_argument('--do_patch_decomposition', type=str2bool, default=False, help='process the image by patches')
@@ -64,6 +65,7 @@ print('  N:                      %d' % args.N)
 print('  alpha:                  %d' % args.alpha)
 print('  beta:                   %d' % args.beta)
 print('  do_prefiltering:        %s' % args.do_prefiltering)
+print('  do_edgetaping:          %s' % args.do_edgetaping)
 print('  do_halo_removal:        %s' % args.do_halo_removal)
 print('  do_patch_decomposition: %s' % args.do_patch_decomposition)
 if args.do_patch_decomposition:
@@ -102,10 +104,16 @@ deblurrer = PolyblurDeblurring(patch_decomposition=args.do_patch_decomposition, 
 c = 0.362
 b = 0.468
 
+if torch.cuda.is_available():
+    method = 'direct'
+else:
+    method = 'fft'
+
 imblur = utils.to_tensor(imblur).unsqueeze(0).to(device)
 start = time.time()
 impred = deblurrer(imblur, n_iter=args.N, c=c, b=b, alpha=args.alpha, beta=args.beta, 
-                   remove_halo=args.do_halo_removal, prefiltering=args.do_prefiltering)
+                   remove_halo=args.do_halo_removal, prefiltering=args.do_prefiltering, 
+                   edgetaping=args.do_edgetaping, method=method)
 print('Restoration took %2.4f seconds' % (time.time() - start))
 imblur = utils.to_array(imblur.squeeze(0).cpu())
 impred = utils.to_array(impred.squeeze(0).cpu())
