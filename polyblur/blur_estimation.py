@@ -40,11 +40,11 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
     if thetas is None:
         thetas = torch.linspace(0, 180, n_angles+1).unsqueeze(0)   # (1,n)
         if torch.cuda.is_available():
-            thetas = thetas.to(imgc.device)
+            thetas = thetas.to(imgc.device, non_blocking=True)
     if interpolated_thetas is None:
         interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles).unsqueeze(0)   # (1,N)
         if torch.cuda.is_available():
-            interpolated_thetas = interpolated_thetas.to(imgc.device)
+            interpolated_thetas = interpolated_thetas.to(imgc.device, non_blocking=True)
 
     start = time()
     print('    --init thetas:         %1.4f' %( time()-start ))
@@ -80,8 +80,11 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
         print('    --gaussian parameter:  %1.4f' % (time() - start))
         # create the blur kernel
         start = time()
-        kernel[:, channel:channel+1] = create_gaussian_filter(thetas, sigma, rho, ksize=ker_size)
+        k = create_gaussian_filter(thetas, sigma, rho, ksize=ker_size)
         print('    --create kernel:       %1.4f' % (time() - start))
+        start = time()
+        kernel[:, channel:channel+1] = k 
+        print('    --store kernel:       %1.4f' % (time() - start))
         
     return kernel
 
@@ -197,38 +200,78 @@ def create_gaussian_filter(thetas, sigmas, rhos, ksize):
     lambda_2 = rhos
     thetas = -thetas
 
-    # Set COV matrix using Lambdas and Theta
-    LAMBDA = torch.zeros(B, C, 2, 2)  # (B,C,2,2)
-    LAMBDA[:, :, 0, 0] = lambda_1**2
-    LAMBDA[:, :, 1, 1] = lambda_2**2
-    Q = torch.zeros(B, C, 2, 2)  # (B,C,2,2)
-    Q[:, :, 0, 0] = torch.cos(thetas)
-    Q[:, :, 0, 1] = -torch.sin(thetas)
-    Q[:, :, 1, 0] = torch.sin(thetas)
-    Q[:, :, 1, 1] = torch.cos(thetas)
-    SIGMA = torch.einsum("bcij,bcjk,bckl->bcil", [Q, LAMBDA, Q.transpose(-2, -1)])  # (B,C,2,2)
-    INV_SIGMA = torch.linalg.inv(SIGMA)
-    INV_SIGMA = INV_SIGMA.view(B, C, 1, 1, 2, 2)  # (B,C,1,1,2,2)
-
-    # Set expectation position
-    MU = (ksize//2) * torch.ones(B, C, 2)
-    MU = MU.view(B, C, 1, 1, 2, 1)  # (B,C,1,1,2,1)
-
     # Create meshgrid for Gaussian
-    X, Y = torch.meshgrid(torch.arange(ksize),
-                          torch.arange(ksize),
-                          indexing='xy')
-    Z = torch.stack([X, Y], dim=-1).unsqueeze(-1)  # (k,k,2,1)
+    start = time()
+    t = torch.arange(ksize, dtype=torch.float32).to(sigmas.device, non_blocking=True)
+    X, Y = torch.meshgrid(t, t, indexing='xy')
+    Z = torch.stack([X, Y], dim=-1).unsqueeze(-1).float()  # (k,k,2,1)
+    print('           --Z:         %1.4f' % (time() - start))
+    start = time()
+    
+    # Set COV matrix using Lambdas and Theta
+    #  # Sigma = Q LAMBDA Qt thus inv_Sigma = Q inv_LAMBDA Qt
+    #  # Q: rotation matrix
+    #  # LAMBDA: variances along each main axis
+    #  LAMBDA = torch.zeros(B, C, 2, 2)  # (B,C,2,2)
+    #  print('           --LAMBDA1:   %1.4f' % (time() - start))
+    #  start = time()
+    #  LAMBDA[..., 0, 0] = 1 / (lambda_1 * lambda_1)
+    #  LAMBDA[..., 1, 1] = 1 / (lambda_2*lambda_2)
+    #  # LAMBDA[:, :, 0, 0] = lambda_1**2
+    #  # LAMBDA[:, :, 1, 1] = lambda_2**2
+    #  print('           --LAMBDA2:   %1.4f' % (time() - start))
+    #  start = time()
+    #  Q = torch.zeros(B, C, 2, 2)  # (B,C,2,2)
+    #  Q[:, :, 0, 0] = torch.cos(thetas)
+    #  Q[:, :, 0, 1] = -torch.sin(thetas)
+    #  Q[:, :, 1, 0] = torch.sin(thetas)
+    #  Q[:, :, 1, 1] = torch.cos(thetas)
+    #  print('           --Q:         %1.4f' % (time() - start))
+    #  start = time()
+    #  # SIGMA = torch.einsum("bcij,bcjk,bckl->bcil", [Q, LAMBDA, Q.transpose(-2, -1)])  # (B,C,2,2)
+    #  INV_SIGMA = torch.einsum("bcij,bcjk,bckl->bcil", [Q, LAMBDA, Q.transpose(-2, -1)])  # (B,C,2,2)
+    #  print('           --SIGMA:     %1.4f' % (time() - start))
+    #  start = time()
+    #  # INV_SIGMA = torch.linalg.inv(SIGMA)
+    #  INV_SIGMA = INV_SIGMA.view(B, C, 1, 1, 2, 2)  # (B,C,1,1,2,2)
+    #  print('           --INV_SIGMA: %1.4f' % (time() - start))
+
+    start = time()
+    c = torch.cos(thetas)
+    s = torch.sin(thetas)
+    cc = c*c
+    ss = s*s
+    sc = s*c
+    # do matrix explicit matrix product and inversion
+    LAMBDA1 = 1.0 / (lambda_1 * lambda_1)
+    LAMBDA2 = 1.0 / (lambda_2 * lambda_2)
+    inv_00 = cc * LAMBDA1 + ss * LAMBDA2
+    inv_01 = sc * (LAMBDA1 + LAMBDA2)
+    inv_11 = ss * LAMBDA1 + cc * LAMBDA2
+    INV_SIGMA = torch.stack([torch.stack([inv_00, inv_01], dim=-1), torch.stack([inv_01, inv_11], dim=-1)], dim=-2)
+    INV_SIGMA = INV_SIGMA.view(B,C,1,1,2,2)
+    print('           --INV_sigma: %1.4f' % (time() - start))
+    # print(torch.linalg.norm(inv_SIGMA.cpu() - INV_SIGMA))
+
+
+    ## Set expectation position
+    #start = time()
+    #MU = (ksize//2) * torch.ones(B, C, 2)
+    #MU = MU.view(B, C, 1, 1, 2, 1)  # (B,C,1,1,2,1)
+    #print('           --MU:        %1.4f' % (time() - start))
+
 
     # Calculate Gaussian for every pixel of the kernel
-    ZZ = Z - MU
+    start = time()
+    ZZ = Z
+    # ZZ = Z - MU
     ZZ_t = ZZ.transpose(-2, -1)  # (B,C,k,k,1,2)
-    raw_kernels = torch.exp(-0.5 * (ZZ_t @ INV_SIGMA @ ZZ).squeeze(-1).squeeze(-1))  # (B,C,k,k)
+    kernels = torch.exp(-0.5 * (ZZ_t @ INV_SIGMA @ ZZ).squeeze(-1).squeeze(-1))  # (B,C,k,k)
+    print('           --kernels:    %1.4f' % (time() - start))
 
     # Normalize the kernel and return
-    mask_small = torch.sum(raw_kernels, dim=(-2, -1)) < 1e-2
-    if mask_small.any():
-        raw_kernels[mask_small].copy_(0)
-        raw_kernels[mask_small, ksize//2, ksize//2].copy_(1)
-    kernels = raw_kernels / torch.sum(raw_kernels, dim=(-2, -1), keepdim=True)
-    return kernels
+    # mask_small = torch.sum(raw_kernels, dim=(-2, -1)) < 1e-2
+    # if mask_small.any():
+    #     raw_kernels[mask_small].copy_(0)
+    #     raw_kernels[mask_small, ksize//2, ksize//2].copy_(1)
+    return kernels / (torch.sum(kernels, dim=(-2, -1), keepdim=True) + 1e-8)

@@ -8,8 +8,8 @@ from .filters import fourier_gradients
 from . import edgetaper
 from . import filters
 from . import blur_estimation
-# from . import domain_transform
-import fast_domain_transform
+from . import domain_transform
+# import fast_domain_transform
 from . import utils
 
 from scipy import signal, ndimage, fftpack
@@ -52,10 +52,10 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
         flag_numpy = False
 
     ## Init the variables
-    impred = img.to(img.device)
+    impred = img.to(img.device, non_blocking=True)
     grad_img = fourier_gradients(img)
-    thetas = torch.linspace(0, 180, n_angles+1).unsqueeze(0).to(img.device)   # (1,n)
-    interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles).unsqueeze(0).to(img.device)   # (1,N)
+    thetas = torch.linspace(0, 180, n_angles+1).unsqueeze(0).to(img.device, non_blocking=True)   # (1,n)
+    interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles).unsqueeze(0).to(img.device, non_blocking=True)   # (1,N)
 
     ## Main loop
     for n in range(n_iter):
@@ -94,8 +94,8 @@ def edge_aware_filtering(img, sigma_s, sigma_r):
     :param sigma_s: float, smoothness parameter for domain transform
     :return: img_smoothed, img_noise: torch.tensors of same size as img, the smooth and noise components of img
     """
-    # img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s)
-    img_smoothed = fast_domain_transform.recursive_filter(img, sigma_r, sigma_s, 3)
+    img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s)
+    # img_smoothed = fast_domain_transform.recursive_filter(img, sigma_r, sigma_s, 3)
     img_noise = img - img_smoothed
     return img_smoothed, img_noise
 
@@ -205,7 +205,7 @@ def inverse_filtering_rank3(img, kernel, alpha=2, b=4, correlate=False, remove_h
     ## Mask deblurring halos
     if remove_halo:
         imout = halo_masking(img, imout, grad_img)
-    return torch.clamp(imout, 0.0, 1.0)
+    return imout
 
 
 
@@ -269,7 +269,7 @@ class PolyblurDeblurring(nn.Module):
             ## Create the arrays for outputing results
             ph = patch_size[0]
             pw = patch_size[1]
-            window = self.build_window(patch_size, window_type='kaiser').unsqueeze(0).unsqueeze(0).to(images.device)  # (1,1,h,w)
+            window = self.build_window(patch_size, window_type='kaiser').unsqueeze(0).unsqueeze(0).to(images.device, non_blocking=True)  # (1,1,h,w)
 
             images_restored = torch.zeros_like(images_padded)  # (B,C,H,W)
             window_sum = torch.zeros(1, 1, images_padded.shape[-2], images_padded.shape[-1], device=images.device)  # (1,1,H,W)
@@ -289,7 +289,7 @@ class PolyblurDeblurring(nn.Module):
 
                 ## Deblurring
                 if device is not None:
-                    patches = patches.to(device)
+                    patches = patches.to(device, non_blocking=True)
                 patches_restored = polyblur_deblurring(patches, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, ker_size=ker_size,
                                                        sigma_s=sigma_s, sigma_r=sigma_r, remove_halo=remove_halo, edgetaping=edgetaping,
                                                        prefiltering=prefiltering, discard_saturation=discard_saturation,

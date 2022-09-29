@@ -11,7 +11,7 @@ from polyblur import utils, filters
 import time
 
 
-device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 #### Argparser
 
@@ -109,8 +109,12 @@ if torch.cuda.is_available():
     method = 'direct'
 else:
     method = 'fft'
+# method = 'fft'
 
 imblur = utils.to_tensor(imblur).unsqueeze(0).to(device)
+impred = deblurrer(imblur, n_iter=args.N, c=c, b=b, alpha=args.alpha, beta=args.beta, 
+                   remove_halo=args.do_halo_removal, prefiltering=args.do_prefiltering, 
+                   edgetaping=args.do_edgetaping, method=method, q=args.q)
 start = time.time()
 impred = deblurrer(imblur, n_iter=args.N, c=c, b=b, alpha=args.alpha, beta=args.beta, 
                    remove_halo=args.do_halo_removal, prefiltering=args.do_prefiltering, 
