@@ -14,6 +14,7 @@ from time import time
 ##############################################
 
 
+
 def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=30, c=0.362, b=0.464, ker_size=25,
                                    discard_saturation=False, multichannel=False, thetas=None, interpolated_thetas=None):
     """
@@ -27,11 +28,13 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
         :param ker_size: the size of the kernel support
         :param discard_saturation: taking care of saturated areas in gradient computation
         :param multichannel: predicting a kernel per channel or on grayscale image
+        :param q: the quantile for image normalization (typically 0 or 1e-4)
         :return: kernel: the (B,C,ker_size,ker_sizr) or (B,1,ker_size,ker_size) local Gaussian kernels
     """
     # if img is color or multichannel is False (same kernel for each color channel), go to grayscale
     if imgc.shape[1] == 3 or not multichannel:
         imgc = imgc.mean(dim=1, keepdims=True)  # BxCxHxW becomes Bx1xHxW
+
 
     # init
     if thetas is None:
@@ -53,32 +56,33 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
         # (Optional) remove saturated areas
         start = time()
         mask = get_saturation_mask(img, discard_saturation)
-        print("    --saturation:         %1.4f" % ( time()-start ))
+        print('    --saturation:          %1.4f' % (time() - start))
         # normalized image
         start = time()
         img_normalized = normalize(img, q=q)
-        print("    --normalization:      %1.4f" % ( time()-start ))
+        print('    --normalize:           %1.4f' % (time() - start))
         # compute the image gradients
         start = time()
         gradients = compute_gradients(img_normalized, mask=mask)
-        print("    --compute gradients:  %1.4f" % ( time()-start ))
+        print('    --compute gradients:   %1.4f' % (time() - start))
         # compute the gradient magnitudes per orientation
         start = time()
         gradient_magnitudes = compute_gradient_magnitudes(gradients, n_angles=n_angles)
-        print("    --compute magnitudes: %1.4f" % ( time()-start ))
+        print('    --compute magnitudes:  %1.4f' % (time() - start))
         # find the maximal blur direction amongst sampled orientations
         start = time()
         magnitude_normal, magnitude_ortho, thetas = find_maximal_blur_direction(gradient_magnitudes, 
                                                                                 thetas, interpolated_thetas)
-        print("    --find directions:    %1.4f" % ( time()-start ))
+        print('    --find directions:     %1.4f' % (time() - start))
         # finally compute the Gaussian parameters
         start = time()
         sigma, rho = compute_gaussian_parameters(magnitude_normal, magnitude_ortho, c=c, b=b)
-        print("    --compute parameters: %1.4f" % ( time()-start ))
+        print('    --gaussian parameter:  %1.4f' % (time() - start))
         # create the blur kernel
         start = time()
         kernel[:, channel:channel+1] = create_gaussian_filter(thetas, sigma, rho, ksize=ker_size)
-        print("    --compute kernels:    %1.4f" % ( time()-start ))
+        print('    --create kernel:       %1.4f' % (time() - start))
+        
     return kernel
 
 
@@ -94,11 +98,12 @@ def normalize(images, q=0.0001):
     """
     range normalization of the images by clipping a small quantile
     """
-    q = 0
-    if q > 0.0:
+    # Pytorch quantile are *much* slower than computing max/min but prevent 
+    # wrong predictions in the presence of artifacts or noise.
+    if q > 0:
         b, c, h, w = images.shape
         value_min = torch.quantile(images.view(b, c, -1), q=q, dim=-1, keepdim=True)
-        value_max = torch.quantile(images.view(b, c, -1), q=1-q, dim=-1, keepdims=True)
+        value_max = torch.quantile(images.view(b, c, -1), q=1-q, dim=-1, keepdim=True)
     else:
         value_min = torch.amin(images, dim=(-1,-2), keepdim=True)
         value_max = torch.amax(images, dim=(-1,-2), keepdim=True)

@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from scipy.signal import fftconvolve
 
-from .filters import p2o
+from .filters import convolve2d
 
 ## Implementation from https://github.com/uschmidt83/fourier-deconvolution-network/blob/master/fdn_predict.py
 
@@ -22,15 +22,12 @@ def edgetaper_alpha(kernel, img_shape):
     return v1.unsqueeze(-1) * v2.unsqueeze(-2)
 
 
-def edgetaper(img, kernel, n_tapers=3):
+def edgetaper(img, kernel, n_tapers=3, method='fft'):
     h, w = img.shape[-2:]
     alpha = edgetaper_alpha(kernel, (h, w))
     _kernel = kernel
     ks = _kernel.shape[-1] // 2
     for i in range(n_tapers):
-        img_padded = F.pad(img, [ks, ks, ks, ks], mode='circular')
-        K = p2o(kernel, img_padded.shape[-2:])
-        I = torch.fft.fft2(img_padded)
-        blurred = torch.real(torch.fft.ifft2(K * I))[..., ks:-ks, ks:-ks]
+        blurred = convolve2d(img, kernel, method=method)
         img = alpha * img + (1 - alpha) * blurred
     return img

@@ -1,7 +1,32 @@
 import torch
+import torch.nn.functional as F
 import numpy as np
 import torch.fft
 import scipy.fft
+
+
+def convolve2d(img, kernel, padding='same', method='direct'):
+    """
+    A per kernel wrapper for torch.nn.functional.conv2d
+    :param img: (B,C,H,W) torch.tensor, the input images
+    :param kernel: (B,C,h,w) or (B,1,h,w) torch.tensor, the blur kernels
+    :param padding: string, can be 'valid' or 'same' 
+    : 
+    :return imout: (B,C,H,W) torch.tensor, the filtered images
+    """
+    if method == 'direct':
+        if kernel.shape[1] == img.shape[1]:
+            return F.conv2d(img, kernel, groups=img.shape[1], padding=padding)
+        else:
+            imout = [F.conv2d(img[:,c:c+1], kernel, padding=padding) for c in range(img.shape[1])]
+            return torch.cat(imout, dim=1)
+    elif method == 'fft':
+        ks = kernel.shape[-1]
+        X = torch.fft.fft2(F.pad(img, [ks, ks, ks, ks], mode='circular'))
+        K = p2o(kernel, X.shape[-2:])
+        return torch.real(torch.fft.ifft2(K * X))[..., ks:-ks, ks:-ks]
+    else:
+        raise('%s is not implemented' % method)
 
 
 def gaussian_filter(sigma, theta, shift=np.array([0.0, 0.0]), k_size=np.array([15, 15])):
