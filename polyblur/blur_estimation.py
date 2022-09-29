@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from .import utils
 from .filters import gaussian_filter, fourier_gradients
 
+from time import time
 
 
 ##############################################
@@ -14,7 +15,7 @@ from .filters import gaussian_filter, fourier_gradients
 
 
 def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=30, c=0.362, b=0.464, ker_size=25,
-                                   discard_saturation=False, multichannel=False):
+                                   discard_saturation=False, multichannel=False, thetas=None, interpolated_thetas=None):
     """
     Compute an approximate Gaussian filter from a RGB or grayscale image.
         :param img: (B,C,H,W) or (B,1,H,W) tensor, the image
@@ -32,25 +33,52 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
     if imgc.shape[1] == 3 or not multichannel:
         imgc = imgc.mean(dim=1, keepdims=True)  # BxCxHxW becomes Bx1xHxW
 
+    # init
+    if thetas is None:
+        thetas = torch.linspace(0, 180, n_angles+1).unsqueeze(0)   # (1,n)
+        if torch.cuda.is_available():
+            thetas = thetas.to(imgc.device)
+    if interpolated_thetas is None:
+        interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles).unsqueeze(0)   # (1,N)
+        if torch.cuda.is_available():
+            interpolated_thetas = interpolated_thetas.to(imgc.device)
+
+    start = time()
+    print('    --init thetas:         %1.4f' %( time()-start ))
+
     # kernel estimation
     kernel = torch.zeros(*imgc.shape[:2], ker_size, ker_size, device=imgc.device).float()  # BxCxhxw or Bx1xhxw
     for channel in range(imgc.shape[1]):
         img = imgc[:, channel:channel+1]  # Bx1xHxW
         # (Optional) remove saturated areas
+        start = time()
         mask = get_saturation_mask(img, discard_saturation)
+        print("    --saturation:         %1.4f" % ( time()-start ))
         # normalized image
+        start = time()
         img_normalized = normalize(img, q=q)
+        print("    --normalization:      %1.4f" % ( time()-start ))
         # compute the image gradients
+        start = time()
         gradients = compute_gradients(img_normalized, mask=mask)
+        print("    --compute gradients:  %1.4f" % ( time()-start ))
         # compute the gradient magnitudes per orientation
+        start = time()
         gradient_magnitudes = compute_gradient_magnitudes(gradients, n_angles=n_angles)
+        print("    --compute magnitudes: %1.4f" % ( time()-start ))
         # find the maximal blur direction amongst sampled orientations
-        magnitude_normal, magnitude_ortho, thetas = find_maximal_blur_direction(gradient_magnitudes, n_angles=n_angles,
-                                                                               n_interpolated_angles=n_interpolated_angles)
+        start = time()
+        magnitude_normal, magnitude_ortho, thetas = find_maximal_blur_direction(gradient_magnitudes, 
+                                                                                thetas, interpolated_thetas)
+        print("    --find directions:    %1.4f" % ( time()-start ))
         # finally compute the Gaussian parameters
+        start = time()
         sigma, rho = compute_gaussian_parameters(magnitude_normal, magnitude_ortho, c=c, b=b)
+        print("    --compute parameters: %1.4f" % ( time()-start ))
         # create the blur kernel
+        start = time()
         kernel[:, channel:channel+1] = create_gaussian_filter(thetas, sigma, rho, ksize=ker_size)
+        print("    --compute kernels:    %1.4f" % ( time()-start ))
     return kernel
 
 
@@ -66,9 +94,14 @@ def normalize(images, q=0.0001):
     """
     range normalization of the images by clipping a small quantile
     """
-    b, c, h, w = images.shape
-    value_min = torch.quantile(images.view(b, c, -1), q=q, dim=-1, keepdim=True)
-    value_max = torch.quantile(images.view(b, c, -1), q=1-q, dim=-1, keepdims=True)
+    q = 0
+    if q > 0.0:
+        b, c, h, w = images.shape
+        value_min = torch.quantile(images.view(b, c, -1), q=q, dim=-1, keepdim=True)
+        value_max = torch.quantile(images.view(b, c, -1), q=1-q, dim=-1, keepdims=True)
+    else:
+        value_min = torch.amin(images, dim=(-1,-2), keepdim=True)
+        value_max = torch.amax(images, dim=(-1,-2), keepdim=True)
     images = (images - value_min) / (value_max - value_min)
     return images.clamp(0.0, 1.0)
 
@@ -99,53 +132,37 @@ def compute_gradient_magnitudes(gradients, n_angles=6):
 
 
 def cubic_interpolator(x_new, x, y):
-    """ 
-    Key's convolutional approximation of cubic interpolation 
-    """
-    abs_s = torch.abs(x_new[..., None] - x[..., None, :])
-    u = torch.zeros_like(abs_s)
-    # 0 < |s| < 1
-    mask = abs_s < 1
-    u[mask] = 1
-    abs_s_mask = abs_s[mask]
-    abs_s_pow = abs_s_mask * abs_s_mask  # ^2
-    u[mask] += -2.5 * abs_s_pow
-    abs_s_pow *= abs_s_mask  # ^3
-    u[mask] += 1.5 * abs_s_pow
-    # 1 <= |s| < 2
-    mask = torch.bitwise_and(1 <= abs_s, abs_s < 2)
-    u[mask] = 2
-    abs_s_mask = abs_s[mask]
-    abs_s_pow = abs_s_mask  # ^1
-    u[mask] += -4 * abs_s_pow
-    abs_s_pow *= abs_s_mask  # ^2
-    u[mask] += 2.5 * abs_s_pow
-    abs_s_pow *= abs_s_mask  # ^3
-    u[mask] += -0.5 * abs_s_pow
-    u = u / (torch.sum(u, dim=-1, keepdim=True) + 1e-8)
-    y_new = (u @ y[..., None]).squeeze(-1)
-    return y_new
+    x_new = torch.abs(x_new[..., None] - x[..., None, :])
+    mask1 = x_new < 1
+    mask2 = torch.bitwise_and(1 <= x_new, x_new < 2)
+    x_new = mask2.float() * (((-0.5 * x_new + 2.5) * x_new - 4) * x_new + 2) + \
+            mask1.float() * ((1.5 * x_new - 2.5) * x_new * x_new + 1) 
+    x_new /= torch.sum(x_new, dim=-1, keepdim=True) + 1e-5
+    return (x_new @ y[..., None]).squeeze(-1)
 
 
-def find_maximal_blur_direction(gradient_magnitudes_angles, n_angles=6, n_interpolated_angles=30):
+def find_maximal_blur_direction(gradient_magnitudes_angles, thetas, interpolated_thetas):
     """
     Predict the blur's main direction by evaluating the maximum of the directional derivatives
     """
     ## Find thetas
-    thetas = torch.linspace(0, 180, n_angles+1, device=gradient_magnitudes_angles.device).unsqueeze(0)  # (1,n)
-    interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles, device=thetas.device).unsqueeze(0)  # (1,N)
+    start = time()
+    n_interpolated_angles = interpolated_thetas.shape[-1]
     gradient_magnitudes_interpolated_angles = cubic_interpolator(interpolated_thetas / n_interpolated_angles, 
                                                 thetas / n_interpolated_angles, gradient_magnitudes_angles)  # (B,N)
+    print('           -- finding thetas: %1.4f' % (time() - start))
     ## Compute magnitude in theta
+    start = time()
     i_min = torch.argmin(gradient_magnitudes_interpolated_angles, dim=-1, keepdim=True).long()
-    # import pdb
-    # pdb.set_trace()
     thetas_normal = torch.take_along_dim(interpolated_thetas, i_min, dim=-1)
     magnitudes_normal = torch.take_along_dim(gradient_magnitudes_interpolated_angles, i_min, dim=-1)
+    print('           -- mag normal:     %1.4f' % (time() - start))
     ## Compute magnitude in theta+90
+    start = time()
     thetas_ortho = (thetas_normal + 90.0) % 180  # angle in [0,pi)
     i_ortho = (thetas_ortho / (180 / n_interpolated_angles)).long()
     magnitudes_ortho = torch.take_along_dim(gradient_magnitudes_interpolated_angles, i_ortho, dim=-1)
+    print('           -- mag ortho:      %1.4f' % (time() - start))
     return magnitudes_normal, magnitudes_ortho, thetas_normal * np.pi / 180
 
 

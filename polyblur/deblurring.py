@@ -12,6 +12,7 @@ from . import domain_transform
 from . import utils
 
 from scipy import signal, ndimage, fftpack
+import time
 
 
 #####################################################
@@ -20,8 +21,9 @@ from scipy import signal, ndimage, fftpack
 
 
 
-def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2, ker_size=25, remove_halo=False,
-                        edgetaping=False, prefiltering=False, discard_saturation=False, multichannel_kernel=False):
+def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2, ker_size=25, n_angles=6,
+                        n_interpolated_angles=30, remove_halo=False, edgetaping=False, prefiltering=False, 
+                        discard_saturation=False, multichannel_kernel=False):
     """
     Meta Functional implementation of Polyblur.
     :param img: (H, W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the blurry image(s)
@@ -40,21 +42,34 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
     :param multichannel_kernel: bool, predicting a kernel common to each color channel or a single kernel per color channel
     :return: impred: np.array or torch.tensor of same size as img, the restored image(s)
     """
+    ## Convert to torch.Tensor from numpy.ndarray
     if type(img) == np.ndarray:
         flag_numpy = True
         img = utils.to_tensor(img).unsqueeze(0)
     else:
         flag_numpy = False
 
+    ## Init the variables
     impred = img
     grad_img = fourier_gradients(img)
-    ## Main loop
+    thetas = torch.linspace(0, 180, n_angles+1).unsqueeze(0)   # (1,n)
+    interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles).unsqueeze(0)   # (1,N)
+    if torch.cuda.is_available():
+        img = img.to(img.device)
+        thetas = thetas.to(img.device)
+        interpolated_thetas = interpolated_thetas.to(img.device)
 
+    ## Main loop
     for n in range(n_iter):
         ## Blur estimation
-        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b, discard_saturation=discard_saturation, ker_size=ker_size,
-                                                          multichannel=multichannel_kernel)
+        start = time.time()
+        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b, discard_saturation=discard_saturation, 
+                                                          ker_size=ker_size, multichannel=multichannel_kernel, 
+                                                          thetas=thetas, interpolated_thetas=interpolated_thetas)
+        print('-- blur estimation %d: %1.4f' % (n+1, time.time() - start))
+
         ## Non-blind deblurring
+        start = time.time()
         if prefiltering:
             impred, impred_noise = edge_aware_filtering(impred, sigma_s, sigma_r)
             impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=beta, remove_halo=remove_halo,
@@ -64,9 +79,11 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
             impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=beta, remove_halo=remove_halo,
                                              do_edgetaper=edgetaping, grad_img=grad_img)
         impred = impred.clip(0.0, 1.0)
+        print('-- deblurring %d:      %1.4f' % (n+1, time.time() - start))
 
+    ## Go back to numpy if needs be
     if flag_numpy:
-        return utils.to_array(impred)
+        return utils.to_array(impred.cpu())
     else:
         return impred
 
