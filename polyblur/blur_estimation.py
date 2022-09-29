@@ -87,7 +87,7 @@ def normalize(images, q=0.0001):
     if q > 0:
         b, c, h, w = images.shape
         value_min = torch.quantile(images.view(b, c, -1), q=q, dim=-1, keepdim=True)
-        value_max = torch.quantile(images.view(b, c, -1), q=1-q, dim=-1, keepdims=True)
+        value_max = torch.quantile(images.view(b, c, -1), q=1-q, dim=-1, keepdim=True)
     else:
         value_min = torch.amin(images, dim=(-1,-2), keepdim=True)
         value_max = torch.amax(images, dim=(-1,-2), keepdim=True)

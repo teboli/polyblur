@@ -70,65 +70,19 @@ torch::Tensor separable_gaussian_ortho_convolve2d(torch::Tensor image,
     int b = image.sizes()[0];
     int h = image.sizes()[1];
     int w = image.sizes()[2];
-    // auto img_x = torch::zeros_like(image);
-    // auto img_y = torch::zeros_like(image);
  
     //Do the 1D convolution along the x-axis
-    // int i, z;
-    // int x, y;
-    // int x_up, x_down;
-    // for (z = 0; z < h * w; z++) {
-    //     // From the linear to 2D indices
-    //     x = fmod(z, w);
-    //     y = (z - x) / w;
-  
-    //     // Central position in the support
-    //     img_x.index_put_({"...", y, x}, 
-    //                      kernel_x.index({"...", 0}) * image.index({"...", y, x}));
-  
-    //     // Iteration on the kernel support (with 'edge' padding)
-    //     for (i = 1; i < support_x; i++) {
-    //         x_down = fmax(x-i, 0);
-    //         x_up = fmin(x+i, w-1);
-    //         // Use the fact that the kernel is symmetric to do just one multiplication
-    //         img_x.index_put_({"...", y, x},
-    //                          img_x.index({"...", y, x}) + 
-    //                          kernel_x.index({"...", i}) * ( image.index({"...", y, x_down}) + 
-    //                                                         image.index({"...", y, x_up}) ) );
-    //     }
-    // }
     namespace F = torch::nn::functional;
-    auto img_x = F::pad( image.unsqueeze(0), F::PadFuncOptions({(support_x-1)/2, (support_x-1)/2, 0, 0}).mode(torch::kReplicate) );
-    img_x = F::conv2d( img_x, kernel_x.unsqueeze(1).unsqueeze(1), F::Conv2dFuncOptions().groups(b) ).squeeze(0);
-    // auto temp = F::conv2d(image.unsqueeze(0), kernel_x.unsqueeze(1).unsqueeze(1), F::Conv2dFuncOptions().groups(b).padding({0, (support_x-1) / 2})).squeeze(0);
-    // std::cout << temp.sizes() <<  image.sizes() << img_x.sizes() << std::endl;
-    // img_x = temp;
+    auto img_x = F::pad( image.unsqueeze(0), 
+                         F::PadFuncOptions({(support_x-1)/2, (support_x-1)/2, 0, 0}).mode(torch::kReplicate) );
+    img_x = F::conv2d( img_x, kernel_x.unsqueeze(1).unsqueeze(1), 
+                       F::Conv2dFuncOptions().groups(b) ).squeeze(0);
 
     //Do the 1D convolution along the x-axis
-    // int y_up, y_down;
-    // or (z = 0; z < h * w; z++) {
-    //    // From the linear to 2D indices
-    //    x = fmod(z, w);
-    //    y = (z - x) / w;
-  
-    //    // Central position in the support
-    //    img_y.index_put_({"...", y, x}, 
-    //                     kernel_y.index({"...", 0}) * img_x.index({"...", y, x}));
-  
-    //    // Iteration on the kernel support (with 'edge' padding)
-    //    for (i = 1; i < support_y; i++) {
-    //        y_down = fmax(y-i,0);
-    //        y_up = fmin(y+1,h-1);
-    //        // Use the fact that the kernel is symmetric to do just one multiplication
-    //        img_y.index_put_({"...", y, x},
-    //                         img_y.index({"...", y, x}) + 
-    //                         kernel_y.index({"...", i}) * ( img_x.index({"...", y_down, x}) + 
-    //                                                        img_x.index({"...", y_up, x}) ) );
-    //    }
-    // 
-    auto img_y = F::pad( img_x.unsqueeze(0), F::PadFuncOptions({0, 0, (support_y-1)/2, (support_y-1)/2}).mode(torch::kReplicate) );
-    img_y = F::conv2d( img_y, kernel_y.unsqueeze(1).unsqueeze(3), F::Conv2dFuncOptions().groups(b) ).squeeze(0);
-    //  img_y = F::conv2d(img_x.unsqueeze(0), kernel_y.unsqueeze(1).unsqueeze(3), F::Conv2dFuncOptions().groups(b).padding({(support_y-1) / 2, 0})).squeeze(0);
+    auto img_y = F::pad( img_x.unsqueeze(0), 
+                         F::PadFuncOptions({0, 0, (support_y-1)/2, (support_y-1)/2}).mode(torch::kReplicate) );
+    img_y = F::conv2d( img_y, kernel_y.unsqueeze(1).unsqueeze(3), 
+                       F::Conv2dFuncOptions().groups(b) ).squeeze(0);
 
     return img_y;
 }
@@ -166,29 +120,11 @@ torch::Tensor separable_gaussian_xt_convolve2d(torch::Tensor image,
     int i, z;
     int x, y;
     int x_up, x_down;
-    // for (z = 0; z < h * w; z++) {
-    //     // From the linear to 2D indices
-    //     x = fmod(z, w);
-    //     y = (z - x) / w;
-  
-    //     // Central position in the support
-    //     img_x.index_put_({"...", y, x}, 
-    //                      kernel_x.index({"...", 0}) * image.index({"...", y, x}));
-  
-    //     // Iteration on the kernel support (with 'edge' padding)
-    //     for (i = 1; i < support_x; i++) {
-    //         x_down = fmax(x-i, 0);
-    //         x_up = fmin(x+i, w-1);
-    //         // Use the fact that the kernel is symmetric to do just one multiplication
-    //         img_x.index_put_({"...", y, x},
-    //                          img_x.index({"...", y, x}) + 
-    //                          kernel_x.index({"...", i}) * ( image.index({"...", y, x_down}) + 
-    //                                                         image.index({"...", y, x_up}) ) );
-    //     }
-    // }
     namespace F = torch::nn::functional;
-    auto img_x = F::pad( image.unsqueeze(0), F::PadFuncOptions({(support_x-1)/2, (support_x-1)/2, 0, 0}).mode(torch::kReplicate) );
-    img_x = F::conv2d( img_x, kernel_x.unsqueeze(1).unsqueeze(1), F::Conv2dFuncOptions().groups(b) ).squeeze(0);
+    auto img_x = F::pad( image.unsqueeze(0), 
+                         F::PadFuncOptions({(support_x-1)/2, (support_x-1)/2, 0, 0}).mode(torch::kReplicate) );
+    img_x = F::conv2d( img_x, kernel_x.unsqueeze(1).unsqueeze(1), 
+                       F::Conv2dFuncOptions().groups(b) ).squeeze(0);
 
     //Do the 1D convolution along the t-axis
     auto img_theta = torch::zeros_like(image);
