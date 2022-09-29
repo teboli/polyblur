@@ -1,6 +1,6 @@
-polyblur.egg-info
-dist/
-build/
+**/*.egg-info
+**/dist/
+**/build/
 **/__pycache__
 **/*.png
 **/*.jpg

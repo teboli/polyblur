@@ -1,6 +1,8 @@
-seaborn
-scikit-image
+numpy
 scipy
+matplotlib
+scikit-image
+seaborn
 tqdm
-glob
-torch==1.10
+glob2
+torch==1.11.0

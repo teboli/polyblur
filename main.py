@@ -40,10 +40,10 @@ parser.add_argument('--sigma_n', type=float, default=0.01, help='image noise sig
 
 ## Polyblur parameters
 parser.add_argument('--N', type=int, default=3, help='polyblur iterations')
-parser.add_argument('--alpha', type=int, default=6, help='polyblur alpha parameter')
-parser.add_argument('--beta', type=int, default=1, help='polyblur beta parameter')
+parser.add_argument('--alpha', type=int, default=2, help='polyblur alpha parameter')
+parser.add_argument('--beta', type=int, default=3, help='polyblur beta parameter')
 parser.add_argument('--do_prefiltering', type=str2bool, default=False, help='apply noise prefiltering')
-parser.add_argument('--do_halo_removal', type=str2bool, default=True, help='use halo removal correction')
+parser.add_argument('--do_halo_removal', type=str2bool, default=False, help='use halo removal correction')
 
 ## Patch parameters
 parser.add_argument('--do_patch_decomposition', type=str2bool, default=False, help='process the image by patches')
