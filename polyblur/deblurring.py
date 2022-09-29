@@ -22,7 +22,7 @@ import time
 
 
 
-def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2.0, ker_size=25, q=0.0, n_angles6,
+def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2.0, ker_size=25, q=0.0, n_angles=6,
                         n_interpolated_angles=30, remove_halo=False, edgetaping=False, prefiltering=False, 
                         discard_saturation=False, multichannel_kernel=False, method='fft'):
     """
@@ -52,20 +52,16 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
         flag_numpy = False
 
     ## Init the variables
-    impred = img
+    impred = img.to(img.device)
     grad_img = fourier_gradients(img)
-    thetas = torch.linspace(0, 180, n_angles+1).unsqueeze(0)   # (1,n)
-    interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles).unsqueeze(0)   # (1,N)
-    if torch.cuda.is_available():
-        img = img.to(img.device)
-        thetas = thetas.to(img.device)
-        interpolated_thetas = interpolated_thetas.to(img.device)
+    thetas = torch.linspace(0, 180, n_angles+1).unsqueeze(0).to(img.device)   # (1,n)
+    interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles).unsqueeze(0).to(img.device)   # (1,N)
 
     ## Main loop
     for n in range(n_iter):
         ## Blur estimation
         start = time.time()
-        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b, discard_saturation=discard_saturation, 
+        kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b, q=q, discard_saturation=discard_saturation, 
                                                           ker_size=ker_size, multichannel=multichannel_kernel, 
                                                           thetas=thetas, interpolated_thetas=interpolated_thetas)
         print('-- blur estimation %d: %1.4f' % (n+1, time.time() - start))
@@ -237,8 +233,8 @@ class PolyblurDeblurring(nn.Module):
         self.patch_overlap = patch_overlap
 
     def forward(self, images, n_iter=1, c=0.352, b=0.468, alpha=2, beta=4, sigma_s=2, ker_size=25, sigma_r=0.4,
-                q=0.0, remove_halo=False, edgetaping=False, prefiltering=False, discard_saturation=False,
-                multichannel_kernel=False, method='fft', device=None):
+                q=0.0, n_angles=6, n_interpolated_angles=30, remove_halo=False, edgetaping=False, prefiltering=False, 
+                discard_saturation=False, multichannel_kernel=False, method='fft', device=None):
         if self.patch_decomposition:
             patch_size = self.patch_size
 
@@ -297,7 +293,8 @@ class PolyblurDeblurring(nn.Module):
                 patches_restored = polyblur_deblurring(patches, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, ker_size=ker_size,
                                                        sigma_s=sigma_s, sigma_r=sigma_r, remove_halo=remove_halo, edgetaping=edgetaping,
                                                        prefiltering=prefiltering, discard_saturation=discard_saturation,
-                                                       multichannel_kernel=multichannel_kernel, method=method, q=q)
+                                                       multichannel_kernel=multichannel_kernel, method=method, q=q, n_angles=n_angles,
+                                                       n_interpolated_angles=n_interpolated_angles)
                 if device is not None:
                     patches_restored = patches_restored.cpu()
 
@@ -314,7 +311,8 @@ class PolyblurDeblurring(nn.Module):
             images_restored = polyblur_deblurring(images, n_iter=n_iter, c=c, b=b, alpha=alpha, beta=beta, ker_size=ker_size,
                                                   sigma_s=sigma_s, sigma_r=sigma_r, remove_halo=remove_halo, edgetaping=edgetaping,
                                                   prefiltering=prefiltering, discard_saturation=discard_saturation,
-                                                  multichannel_kernel=multichannel_kernel, method=method, q=q)
+                                                  multichannel_kernel=multichannel_kernel, method=method, q=q, n_angles=n_angles,
+                                                  n_interpolated_angles=n_interpolated_angles)
         return images_restored
 
     def build_window(self, image_size, window_type):
