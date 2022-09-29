@@ -1,10 +1,10 @@
 from setuptools import setup, find_packages, Extension
 from torch.utils import cpp_extension
 
-# Install the intermediate separable kernel
-setup(name='separable_gaussian2d',
-        ext_modules=[cpp_extension.CppExtension('separable_gaussian2d', ['./polyblur/separable_convolution/separable_gaussian2d.cpp'])],
-        cmdclass={'build_ext': cpp_extension.BuildExtension})
+# # Install the intermediate separable kernel
+# setup(name='separable_gaussian2d',
+#         ext_modules=[cpp_extension.CppExtension('separable_gaussian2d', ['./polyblur/separable_convolution/separable_gaussian2d.cpp'])],
+#         cmdclass={'build_ext': cpp_extension.BuildExtension})
 
 # Install the intermediate domain transform module
 setup(name='fast_domain_transform',
