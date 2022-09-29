@@ -6,8 +6,6 @@ import torch.nn.functional as F
 from .import utils
 from .filters import gaussian_filter, fourier_gradients
 
-from time import time
-
 
 ##############################################
 ############ Pytorch Sub-routines ############
@@ -46,42 +44,25 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
         if torch.cuda.is_available():
             interpolated_thetas = interpolated_thetas.to(imgc.device)
 
-    start = time()
-    print('    --init thetas:         %1.4f' %( time()-start ))
-
     # kernel estimation
     kernel = torch.zeros(*imgc.shape[:2], ker_size, ker_size, device=imgc.device).float()  # BxCxhxw or Bx1xhxw
     for channel in range(imgc.shape[1]):
         img = imgc[:, channel:channel+1]  # Bx1xHxW
         # (Optional) remove saturated areas
-        start = time()
         mask = get_saturation_mask(img, discard_saturation)
-        print('    --saturation:          %1.4f' % (time() - start))
         # normalized image
-        start = time()
         img_normalized = normalize(img, q=q)
-        print('    --normalize:           %1.4f' % (time() - start))
         # compute the image gradients
-        start = time()
         gradients = compute_gradients(img_normalized, mask=mask)
-        print('    --compute gradients:   %1.4f' % (time() - start))
         # compute the gradient magnitudes per orientation
-        start = time()
         gradient_magnitudes = compute_gradient_magnitudes(gradients, n_angles=n_angles)
-        print('    --compute magnitudes:  %1.4f' % (time() - start))
         # find the maximal blur direction amongst sampled orientations
-        start = time()
         magnitude_normal, magnitude_ortho, thetas = find_maximal_blur_direction(gradient_magnitudes, 
                                                                                 thetas, interpolated_thetas)
-        print('    --find directions:     %1.4f' % (time() - start))
         # finally compute the Gaussian parameters
-        start = time()
         sigma, rho = compute_gaussian_parameters(magnitude_normal, magnitude_ortho, c=c, b=b)
-        print('    --gaussian parameter:  %1.4f' % (time() - start))
         # create the blur kernel
-        start = time()
         kernel[:, channel:channel+1] = create_gaussian_filter(thetas, sigma, rho, ksize=ker_size)
-        print('    --create kernel:       %1.4f' % (time() - start))
         
     return kernel
 
@@ -151,23 +132,17 @@ def find_maximal_blur_direction(gradient_magnitudes_angles, thetas, interpolated
     Predict the blur's main direction by evaluating the maximum of the directional derivatives
     """
     ## Find thetas
-    start = time()
     n_interpolated_angles = interpolated_thetas.shape[-1]
     gradient_magnitudes_interpolated_angles = cubic_interpolator(interpolated_thetas / n_interpolated_angles, 
                                                 thetas / n_interpolated_angles, gradient_magnitudes_angles)  # (B,N)
-    print('           -- finding thetas: %1.4f' % (time() - start))
     ## Compute magnitude in theta
-    start = time()
     i_min = torch.argmin(gradient_magnitudes_interpolated_angles, dim=-1, keepdim=True).long()
     thetas_normal = torch.take_along_dim(interpolated_thetas, i_min, dim=-1)
     magnitudes_normal = torch.take_along_dim(gradient_magnitudes_interpolated_angles, i_min, dim=-1)
-    print('           -- mag normal:     %1.4f' % (time() - start))
     ## Compute magnitude in theta+90
-    start = time()
     thetas_ortho = (thetas_normal + 90.0) % 180  # angle in [0,pi)
     i_ortho = (thetas_ortho / (180 / n_interpolated_angles)).long()
     magnitudes_ortho = torch.take_along_dim(gradient_magnitudes_interpolated_angles, i_ortho, dim=-1)
-    print('           -- mag ortho:      %1.4f' % (time() - start))
     return magnitudes_normal, magnitudes_ortho, thetas_normal * np.pi / 180
 
 
