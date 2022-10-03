@@ -93,7 +93,7 @@ def edge_aware_filtering(img, sigma_s, sigma_r):
     :param sigma_s: float, smoothness parameter for domain transform
     :return: img_smoothed, img_noise: torch.tensors of same size as img, the smooth and noise components of img
     """
-    img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s)
+    img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s, num_iterations=1)
     img_noise = img - img_smoothed
     return img_smoothed, img_noise
 

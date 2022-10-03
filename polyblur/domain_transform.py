@@ -49,39 +49,37 @@ def recursive_filter(I, sigma_s=60, sigma_r=0.4, num_iterations=3, joint_image=N
         # Compute the sigma value for this iterations (Equation 14 of our paper)
         sigma_H_i = sigma_H * math.sqrt(3) * 2**(N - (i + 1)) / math.sqrt(4**N - 1)
 
-        F = transformed_domain_recursive_filter_horizontal(F, dHdx, sigma_H_i)
+        # Feedback coefficient (Appendix of our paper).
+        a = math.exp(-math.sqrt(2) / sigma_H_i)
+        
+        V = (a**dHdx).unsqueeze(1)
+        F = transformed_domain_recursive_filter_horizontal(F, V)
         F = F.transpose(-1, -2)
 
-        F = transformed_domain_recursive_filter_horizontal(F, dVdy, sigma_H_i)
+        V = (a**dVdy).unsqueeze(1)
+        F = transformed_domain_recursive_filter_horizontal(F, V)
         F = F.transpose(-1, -2)
 
     return F
 
 
-def transformed_domain_recursive_filter_horizontal(F, D, sigma):
+@torch.jit.script
+def transformed_domain_recursive_filter_horizontal(F, V):
     """
     (pytorch) Implementation of the recursive 1D (horizontal) filtering (Recursive1DFilter Alg.7) used in the edge aware smoothing from:
         [Eduardo Simoes Lopes Gastal and Manuel M. Oliveira. Domain transform for edge-aware
          image and video processing. ACM Transactions on Graphics (ToG), 30(4):69, 2011.]
     :param F: (B,C,H,W) torch.tensor, the input image(s)
-    :param D: (B,C,H,W) torch.tensor, the image of "distances(s)" used to control the diffusion
-    :param sigma: float, regularization parameter 
+    :param D: (B,1,H,W) torch.tensor, the filter used to control the diffusion
     :return: img_smoothed: torch.tensor of same size as img, the filtered image(s)
     """
-    # Feedback coefficient (Appendix of our paper).
-    a = math.exp(-math.sqrt(2) / sigma)
-
-    V = a**D
-    V = V.unsqueeze(1)
-
-    batch, num_channels, h, w = F.shape
 
     # Left -> Right filter
-    for i in range(1, w, 1):
+    for i in range(1, F.shape[-1], 1):
         F[..., i] += V[..., i] * (F[..., i - 1] - F[..., i])
 
     # Right -> Left filter
-    for i in range(w-2, -1, -1):  # from w-2 to 0
+    for i in range(F.shape[-1]-2, -1, -1):  # from w-2 to 0
         F[..., i] += V[..., i + 1] * (F[..., i + 1] - F[..., i])
 
     return F
