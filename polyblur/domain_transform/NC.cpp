@@ -13,7 +13,7 @@ torch::Tensor find(
     // query along the last axis
     if (query.dim() == 1) {
         query = query.unsqueeze(0);
-    }  
+    }
 
     // First find all the nonzero values
     auto indices = torch::nonzero(query);  // (n,2)
