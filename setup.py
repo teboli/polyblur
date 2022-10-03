@@ -6,10 +6,6 @@ from torch.utils import cpp_extension
 #         ext_modules=[cpp_extension.CppExtension('separable_gaussian2d', ['./polyblur/separable_convolution/separable_gaussian2d.cpp'])],
 #         cmdclass={'build_ext': cpp_extension.BuildExtension})
 
-# Install the intermediate domain transform module
-setup(name='fast_domain_transform',
-        ext_modules=[cpp_extension.CppExtension('fast_domain_transform', ['./polyblur/domain_transform/RF.cpp'])],
-        cmdclass={'build_ext': cpp_extension.BuildExtension})
 
 # Install the main polyblur module
 setup(
