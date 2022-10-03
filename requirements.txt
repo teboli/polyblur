@@ -6,3 +6,4 @@ seaborn
 tqdm
 glob2
 torch==1.11.0
+ninja

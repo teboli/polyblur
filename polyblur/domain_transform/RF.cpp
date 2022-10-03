@@ -4,13 +4,19 @@
 using namespace torch::indexing;
 
 
+/* Note: 
+ * The recursive filter is actually slow because it cannot be parallized.
+ * Thus, this code does not scale for larger images. In general, use the 
+ * normalized convolution instead (NC.cpp).
+ */
+
 
 torch::Tensor filter_horizontal(torch::Tensor F,
                                 torch::Tensor D,
                                 float sigma) {
-    // Feedback coefficient (Appendix of our paper
+    // Feedback coefficient (Appendix of our paper)
     float a = exp(-sqrt(2) / sigma);
-    auto V = torch::pow(a * torch::ones_like(D), D).unsqueeze(0);
+    auto V = torch::pow(a, D).unsqueeze(0);
 
     int w = F.sizes()[3];
 
@@ -34,12 +40,10 @@ torch::Tensor filter_horizontal(torch::Tensor F,
 
 
 
-torch::Tensor recursive_filter(torch::Tensor img,
+torch::Tensor recursive_filter(torch::Tensor I,
                                float sigma_s,
                                float sigma_r,
                                int num_iterations) {
-    auto I = img;
-
     int batch = I.sizes()[0];
     int h = I.sizes()[2];
     int w = I.sizes()[3];
