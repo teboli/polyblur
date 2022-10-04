@@ -3,7 +3,6 @@ import torch
 import torch.fft
 import torch.nn as nn
 import torch.nn.functional as F
-from .filters import fourier_gradients
 
 from . import edgetaper
 from . import filters
@@ -53,7 +52,7 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
     ## Init the variables
     start = time()
     impred = img
-    grad_img = fourier_gradients(img)
+    grad_img = filters.fourier_gradients(img)
     thetas = torch.linspace(0, 180, n_angles+1, device=img.device).unsqueeze(0).long()   # (1,n)
     interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles, device=img.device).unsqueeze(0).long()  # (1,N)
     print('-- warming up:        %1.5f' % (time() - start))
@@ -95,7 +94,8 @@ def edge_aware_filtering(img, sigma_s, sigma_r):
     :param sigma_s: float, smoothness parameter for domain transform
     :return: img_smoothed, img_noise: torch.tensors of same size as img, the smooth and noise components of img
     """
-    img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s, num_iterations=1)
+    # img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s, num_iterations=1)
+    img_smoothed = filters.bilateral_filter(img)
     img_noise = img - img_smoothed
     return img_smoothed, img_noise
 
@@ -148,8 +148,8 @@ def compute_polynomial_fft(img, kernel, alpha, b, not_symmetric=False):
         Y = C * Y
     ## C implements the pure phase filter described in the Polyblur article 
     ## needed to deblur non symmetic kernels. For Gaussian kernels (symmetric) it has no effect.
-    a3 = alpha / 2 - b + 2;
-    a2 = 3 * b - alpha - 6;
+    a3 = alpha / 2 - b + 2
+    a2 = 3 * b - alpha - 6
     a1 = 5 - 3 * b + alpha / 2
     X = a3 * Y
     X = K * X + a2 * Y
@@ -161,7 +161,7 @@ def compute_polynomial_fft(img, kernel, alpha, b, not_symmetric=False):
 
 @torch.jit.script
 def grad_prod_(grad_x, grad_y, gout_x, gout_y):
-    return -grad_x * gout_x + -grad_y * grad_y
+    return (- grad_x * gout_x) +  (- grad_y * grad_y)
 
 
 @torch.jit.script
@@ -188,10 +188,10 @@ def halo_masking(img, imout, grad_img=None):
     :return torch.tensor of same size as img, the halo corrected image(s)
     """
     if grad_img is None:
-        grad_x, grad_y = fourier_gradients(img)
+        grad_x, grad_y = filters.fourier_gradients(img)
     else:
         grad_x, grad_y = grad_img
-    gout_x, gout_y = fourier_gradients(imout)
+    gout_x, gout_y = filters.fourier_gradients(imout)
     M = grad_prod_(grad_x, grad_y, gout_x, gout_y)
     nM = torch.sum(grad_square_(grad_x, grad_y), dim=(-2, -1), keepdim=True)
     z = grad_div_and_clip_(M, nM)
@@ -222,9 +222,9 @@ def inverse_filtering_rank3(img, kernel, alpha=2, b=4, correlate=False, remove_h
     imout = compute_polynomial(img, kernel, alpha, b, method=method)
     ## Crop
     imout = utils.crop_with_kernel(imout, kernel)
-    img = utils.crop_with_kernel(img, kernel)
     ## Mask deblurring halos
     if remove_halo:
+        img = utils.crop_with_kernel(img, kernel)
         imout = halo_masking(img, imout, grad_img)
     return torch.clamp(imout, 0.0, 1.0)
 

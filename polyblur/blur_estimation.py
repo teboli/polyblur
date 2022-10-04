@@ -186,7 +186,7 @@ def compute_gaussian_parameters(magnitudes_normal, magnitudes_ortho, c, b):
     sigma = torch.sqrt(sigma)
     ## Compute rho
     rho = cc / (magnitudes_ortho * magnitudes_ortho + 1e-8) - bb
-    rho = torch.clamp(sigma, min=0.09, max=16.0)
+    rho = torch.clamp(rho, min=0.09, max=16.0)
     rho = torch.sqrt(rho)
     return sigma, rho
 
@@ -228,7 +228,7 @@ def create_gaussian_filter(thetas, sigmas, rhos, ksize):
     INV_SIGMA = INV_SIGMA.view(B, C, 1, 1, 2, 2)  # (B,C,1,1,2,2)
 
     # Create meshgrid for Gaussian
-    t = torch.arange(ksize, device=sigmas.device)
+    t = torch.arange(ksize, device=sigmas.device) - ((ksize-1) // 2)
     X, Y = torch.meshgrid(t, t, indexing='xy')
     Z = torch.stack([X, Y], dim=-1).unsqueeze(-1).float()  # (k,k,2,1)
     Z_t = Z.transpose(-2, -1)  # (k,k,1,2)

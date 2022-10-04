@@ -45,11 +45,27 @@ def to_uint(img):
     return img
 
 
-def pad_with_kernel(img, kernel):
-    ks = kernel.shape[-1] // 2
-    return F.pad(img, (ks, ks, ks, ks), mode='replicate')
+def pad_with_kernel(img, kernel=None, ksize=3, mode='replicate'):
+    if kernel is not None:
+        ks = kernel.shape[-1] // 2
+    else:
+        ks = ksize // 2
+    return F.pad(img, (ks, ks, ks, ks), mode=mode)
 
 
-def crop_with_kernel(img, kernel):
-    ks = kernel.shape[-1] // 2
+def crop_with_kernel(img, kernel=None, ksize=3):
+    if kernel is not None:
+        ks = kernel.shape[-1] // 2
+    else:
+        ks = ksize // 2
     return img[..., ks:-ks, ks:-ks]
+
+
+def extract_tiles(img, kernel_size, stride=1):
+    b, c, _, _ = img.shape
+    h, w = kernel_size
+    tiles = F.unfold(img, kernel_size, stride)  # (B,C*H*W,L)
+    tiles = tiles.permute(0, 2, 1)  # (B,L,C*H*W)
+    tiles = tiles.view(b, -1, c, h ,w)
+    return tiles
+    
