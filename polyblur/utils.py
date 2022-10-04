@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.fft
+import torch.nn.functional as F
 from skimage import img_as_float32
 
 
@@ -43,4 +44,28 @@ def to_uint(img):
     img = (255*img).astype(np.uint8)
     return img
 
+
+def pad_with_kernel(img, kernel=None, ksize=3, mode='replicate'):
+    if kernel is not None:
+        ks = kernel.shape[-1] // 2
+    else:
+        ks = ksize // 2
+    return F.pad(img, (ks, ks, ks, ks), mode=mode)
+
+
+def crop_with_kernel(img, kernel=None, ksize=3):
+    if kernel is not None:
+        ks = kernel.shape[-1] // 2
+    else:
+        ks = ksize // 2
+    return img[..., ks:-ks, ks:-ks]
+
+
+def extract_tiles(img, kernel_size, stride=1):
+    b, c, _, _ = img.shape
+    h, w = kernel_size
+    tiles = F.unfold(img, kernel_size, stride)  # (B,C*H*W,L)
+    tiles = tiles.permute(0, 2, 1)  # (B,L,C*H*W)
+    tiles = tiles.view(b, -1, c, h ,w)
+    return tiles
 

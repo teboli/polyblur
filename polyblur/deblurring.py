@@ -3,7 +3,6 @@ import torch
 import torch.fft
 import torch.nn as nn
 import torch.nn.functional as F
-from .filters import fourier_gradients
 
 from . import edgetaper
 from . import filters
@@ -12,7 +11,7 @@ from . import domain_transform
 from . import utils
 
 from scipy import signal, ndimage, fftpack
-import time
+from time import time
 
 
 #####################################################
@@ -50,23 +49,32 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
     else:
         flag_numpy = False
 
+    ## Which format for the kernel: 2D filter (FFT or direct) or tuple of parameters (direct separable)?
+    if method == 'direct_separable':
+        return_2d_filters = False
+    else:
+        return_2d_filters = True
+
     ## Init the variables
-    impred = img.to(img.device)
-    grad_img = fourier_gradients(img)
-    thetas = torch.linspace(0, 180, n_angles+1).unsqueeze(0).to(img.device)   # (1,n)
-    interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles).unsqueeze(0).to(img.device)   # (1,N)
+    start = time()
+    impred = img
+    grad_img = filters.fourier_gradients(img)
+    thetas = torch.linspace(0, 180, n_angles+1, device=img.device).unsqueeze(0).long()   # (1,n)
+    interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles, device=img.device).unsqueeze(0).long()  # (1,N)
+    print('-- init tensors:      %1.5f' % (time() - start))
 
     ## Main loop
     for n in range(n_iter):
         ## Blur estimation
-        start = time.time()
+        start = time()
         kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b, q=q, discard_saturation=discard_saturation, 
                                                           ker_size=ker_size, multichannel=multichannel_kernel, 
-                                                          thetas=thetas, interpolated_thetas=interpolated_thetas)
-        print('-- blur estimation %d: %1.4f' % (n+1, time.time() - start))
+                                                          thetas=thetas, interpolated_thetas=interpolated_thetas,
+                                                          return_2d_filters=return_2d_filters)
+        print('-- blur estimation %d: %1.5f' % (n+1, time() - start))
 
         ## Non-blind deblurring
-        start = time.time()
+        start =time()
         if prefiltering:
             impred, impred_noise = edge_aware_filtering(impred, sigma_s, sigma_r)
             impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=beta, remove_halo=remove_halo,
@@ -76,7 +84,7 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
             impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=beta, remove_halo=remove_halo,
                                              do_edgetaper=edgetaping, grad_img=grad_img, method=method)
         impred = impred.clip(0.0, 1.0)
-        print('-- deblurring %d:      %1.4f' % (n+1, time.time() - start))
+        print('-- deblurring %d:      %1.5f' % (n+1, time() - start))
 
     ## Go back to numpy if needs be
     if flag_numpy:
@@ -93,21 +101,22 @@ def edge_aware_filtering(img, sigma_s, sigma_r):
     :param sigma_s: float, smoothness parameter for domain transform
     :return: img_smoothed, img_noise: torch.tensors of same size as img, the smooth and noise components of img
     """
-    img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s, num_iterations=1)
+    # img_smoothed = domain_transform.recursive_filter(img, sigma_r=sigma_r, sigma_s=sigma_s, num_iterations=1)
+    img_smoothed = filters.bilateral_filter(img)
     img_noise = img - img_smoothed
     return img_smoothed, img_noise
 
 
-def compute_polynomial(img, kernel, alpha, b, method='fft'):
+def compute_polynomial(img, kernel, alpha, b, method='fft', not_symmetric=False):
     if method == 'fft':
-        return compute_polynomial_fft(img, kernel, alpha, b)
-    elif method == 'direct':
-        return compute_polynomial_direct(img, kernel, alpha, b)
+        return compute_polynomial_fft(img, kernel, alpha, b, not_symmetric)
+    elif method == 'direct' or method == 'direct_separable':
+        return compute_polynomial_direct(img, kernel, alpha, b, not_symmetric)
     else:
-        raise('%s not implemented' % method)
+        Exception('%s not implemented' % method)
 
 
-def compute_polynomial_direct(img, kernel, alpha, b):
+def compute_polynomial_direct(img, kernel, alpha, b, not_symmetric=False):
     """
     Implements in the time domain the polynomial deconvolution filter (Deconvolution Alg.4) 
     using the polynomial approximation of Eq. (27)
@@ -123,11 +132,10 @@ def compute_polynomial_direct(img, kernel, alpha, b):
     imout = a3 * img
     imout = filters.convolve2d(imout, kernel) + a2 * img
     imout = filters.convolve2d(imout, kernel) + a1 * img
-    imout = filters.convolve2d(imout, kernel) + b * img
-    return imout
+    return filters.convolve2d(imout, kernel) + b * img
 
 
-def compute_polynomial_fft(img, kernel, alpha, b):
+def compute_polynomial_fft(img, kernel, alpha, b, not_symmetric=False):
     """
     Implements in the fourier domain the polynomial deconvolution filter (Deconvolution Alg.4) 
     using the polynomial approximation of Eq. (27)
@@ -141,19 +149,42 @@ def compute_polynomial_fft(img, kernel, alpha, b):
     h, w = img.shape[-2:]
     Y = torch.fft.fft2(img, dim=(-2, -1))
     K = filters.p2o(kernel, (h, w))  # from NxCxhxw to NxCxHxW
-    C = torch.conj(K) / (torch.abs(K) + 1e-8)
+    ## If the filter is not symmetric, shift the image
+    if not_symmetric:
+        C = torch.conj(K) / (torch.abs(K) + 1e-8)
+        Y = C * Y
     ## C implements the pure phase filter described in the Polyblur article 
     ## needed to deblur non symmetic kernels. For Gaussian kernels (symmetric) it has no effect.
-    a3 = alpha / 2 - b + 2;
-    a2 = 3 * b - alpha - 6;
+    a3 = alpha / 2 - b + 2
+    a2 = 3 * b - alpha - 6
     a1 = 5 - 3 * b + alpha / 2
-    Y = C * Y
     X = a3 * Y
     X = K * X + a2 * Y
     X = K * X + a1 * Y
     X = K * X + b * Y
     ## Go back to temporal domain
     return torch.real(torch.fft.ifft2(X, dim=(-2, -1)))
+
+
+@torch.jit.script
+def grad_prod_(grad_x, grad_y, gout_x, gout_y):
+    return (- grad_x * gout_x) +  (- grad_y * grad_y)
+
+
+@torch.jit.script
+def grad_square_(grad_x, grad_y):
+    return grad_x * grad_x + grad_y * grad_y
+
+
+@torch.jit.script
+def grad_div_and_clip_(M, nM):
+    return torch.clamp(M / (nM + M), min=0)
+
+
+@torch.jit.script
+def grad_convex_sum_(img, imout, z):
+    # Equivalent to z * img + (1-z) * imout
+    return imout + z * (img - imout)
 
 
 def halo_masking(img, imout, grad_img=None):
@@ -164,14 +195,14 @@ def halo_masking(img, imout, grad_img=None):
     :return torch.tensor of same size as img, the halo corrected image(s)
     """
     if grad_img is None:
-        grad_x, grad_y = fourier_gradients(img)
+        grad_x, grad_y = filters.fourier_gradients(img)
     else:
         grad_x, grad_y = grad_img
-    gout_x, gout_y = fourier_gradients(imout)
-    M = (-grad_x) * gout_x + (-grad_y) * gout_y
-    nM = torch.sum(grad_x ** 2 + grad_y ** 2, dim=(-2, -1), keepdim=True)
-    z = torch.clip(M / (nM + M), min=0)
-    return z * img + (1 - z) * imout
+    gout_x, gout_y = filters.fourier_gradients(imout)
+    M = grad_prod_(grad_x, grad_y, gout_x, gout_y)
+    nM = torch.sum(grad_square_(grad_x, grad_y), dim=(-2, -1), keepdim=True)
+    z = grad_div_and_clip_(M, nM)
+    return grad_convex_sum_(img, imout, z)
 
 
 def inverse_filtering_rank3(img, kernel, alpha=2, b=4, correlate=False, remove_halo=False, 
@@ -190,18 +221,17 @@ def inverse_filtering_rank3(img, kernel, alpha=2, b=4, correlate=False, remove_h
     """
     if correlate:
         kernel = torch.rot90(kernel, k=2, dims=(-2, -1))
-    ## Pad
-    ks = kernel.shape[-1] // 2
-    img = F.pad(img, (ks, ks, ks, ks), mode='replicate')
+    ## Pad (with edgetaping optionally)
+    img = utils.pad_with_kernel(img, kernel)
     if do_edgetaper:
         img = edgetaper.edgetaper(img, kernel, method=method)  # for better edge handling
     ## Deblurring
     imout = compute_polynomial(img, kernel, alpha, b, method=method)
     ## Crop
-    imout = imout[..., ks:-ks, ks:-ks]
-    img = img[..., ks:-ks, ks:-ks]
+    imout = utils.crop_with_kernel(imout, kernel)
     ## Mask deblurring halos
     if remove_halo:
+        img = utils.crop_with_kernel(img, kernel)
         imout = halo_masking(img, imout, grad_img)
     return torch.clamp(imout, 0.0, 1.0)
 

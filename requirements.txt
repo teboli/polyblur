@@ -5,5 +5,5 @@ scikit-image
 seaborn
 tqdm
 glob2
-torch==1.11.0
 ninja
+torch==1.11.0
