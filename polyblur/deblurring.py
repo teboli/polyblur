@@ -49,13 +49,19 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
     else:
         flag_numpy = False
 
+    ## Which format for the kernel: 2D filter (FFT or direct) or tuple of parameters (direct separable)?
+    if method == 'direct_separable':
+        return_2d_filters = False
+    else:
+        return_2d_filters = True
+
     ## Init the variables
     start = time()
     impred = img
     grad_img = filters.fourier_gradients(img)
     thetas = torch.linspace(0, 180, n_angles+1, device=img.device).unsqueeze(0).long()   # (1,n)
     interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles, device=img.device).unsqueeze(0).long()  # (1,N)
-    print('-- warming up:        %1.5f' % (time() - start))
+    print('-- init tensors:      %1.5f' % (time() - start))
 
     ## Main loop
     for n in range(n_iter):
@@ -63,7 +69,8 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
         start = time()
         kernel = blur_estimation.gaussian_blur_estimation(impred, c=c, b=b, q=q, discard_saturation=discard_saturation, 
                                                           ker_size=ker_size, multichannel=multichannel_kernel, 
-                                                          thetas=thetas, interpolated_thetas=interpolated_thetas)
+                                                          thetas=thetas, interpolated_thetas=interpolated_thetas,
+                                                          return_2d_filters=return_2d_filters)
         print('-- blur estimation %d: %1.5f' % (n+1, time() - start))
 
         ## Non-blind deblurring
@@ -103,10 +110,10 @@ def edge_aware_filtering(img, sigma_s, sigma_r):
 def compute_polynomial(img, kernel, alpha, b, method='fft', not_symmetric=False):
     if method == 'fft':
         return compute_polynomial_fft(img, kernel, alpha, b, not_symmetric)
-    elif method == 'direct':
+    elif method == 'direct' or method == 'direct_separable':
         return compute_polynomial_direct(img, kernel, alpha, b, not_symmetric)
     else:
-        raise('%s not implemented' % method)
+        Exception('%s not implemented' % method)
 
 
 def compute_polynomial_direct(img, kernel, alpha, b, not_symmetric=False):

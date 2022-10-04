@@ -11,7 +11,7 @@ from polyblur import utils, filters
 import time
 
 
-device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 #### Argparser
 
@@ -105,19 +105,31 @@ deblurrer = PolyblurDeblurring(patch_decomposition=args.do_patch_decomposition, 
 c = 0.362
 b = 0.468
 
+
 if torch.cuda.is_available():
     method = 'direct'
 else:
     method = 'fft'
 
-imblur = utils.to_tensor(imblur).unsqueeze(0).to(device)
-start = time.time()
-impred = deblurrer(imblur, n_iter=args.N, c=c, b=b, alpha=args.alpha, beta=args.beta, 
-                   remove_halo=args.do_halo_removal, prefiltering=args.do_prefiltering, 
-                   edgetaping=args.do_edgetaping, method=method, q=args.q)
-print('Restoration took %2.4f seconds' % (time.time() - start))
+
+imblur = utils.to_tensor(imblur).unsqueeze(0).to(device, non_blocking=True)
+with torch.no_grad():
+    ## Mock run: to compile the JIT scripts. It will be fairly long (up to a few seconds).
+    print('Mock run to compile the JIT scripts.')
+    impred = deblurrer(imblur, n_iter=args.N, c=c, b=b, alpha=args.alpha, beta=args.beta, 
+                       remove_halo=args.do_halo_removal, prefiltering=args.do_prefiltering, 
+                       edgetaping=args.do_edgetaping, method=method, q=args.q)
+    ## Real run: MUCH faster than the previous run, in about 10ms for the peackok example!
+    print('Real run with the actual speed expected from Polyblur.')
+    start = time.time()
+    impred = deblurrer(imblur, n_iter=args.N, c=c, b=b, alpha=args.alpha, beta=args.beta, 
+                       remove_halo=args.do_halo_removal, prefiltering=args.do_prefiltering, 
+                       edgetaping=args.do_edgetaping, method=method, q=args.q)
+    print('Restoration took %2.3f seconds' % (time.time() - start))
 imblur = utils.to_array(imblur.squeeze(0).cpu())
 impred = utils.to_array(impred.squeeze(0).cpu())
+
+
 
 plt.figure(figsize=(6, 4))
 plt.subplot(1, 2, 1)

@@ -16,7 +16,8 @@ from .filters import gaussian_filter, fourier_gradients
 
 
 def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=30, c=0.362, b=0.464, ker_size=25,
-                                   discard_saturation=False, multichannel=False, thetas=None, interpolated_thetas=None):
+                                   discard_saturation=False, multichannel=False, thetas=None, interpolated_thetas=None,
+                                   return_2d_filters=True):
     """
     Compute an approximate Gaussian filter from a RGB or grayscale image.
         :param img: (B,C,H,W) or (B,1,H,W) tensor, the image
@@ -35,9 +36,7 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
     if imgc.shape[1] == 3 or not multichannel:
         imgc = imgc.mean(dim=1, keepdims=True)  # BxCxHxW becomes Bx1xHxW
 
-
     # init
-    start = time()
     if thetas is None:
         thetas = torch.linspace(0, 180, n_angles+1).unsqueeze(0)   # (1,n)
         if torch.cuda.is_available():
@@ -46,41 +45,36 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
         interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles).unsqueeze(0)   # (1,N)
         if torch.cuda.is_available():
             interpolated_thetas = interpolated_thetas.to(imgc.device)
-    print('    -- init:          %1.5f' % (time() -start))
 
     # kernel estimation
-    kernel = torch.zeros(*imgc.shape[:2], ker_size, ker_size, device=imgc.device).float()  # BxCxhxw or Bx1xhxw
+    if return_2d_filters:
+        kernel = torch.zeros(*imgc.shape[:2], ker_size, ker_size, device=imgc.device).float()  # BxCxhxw or Bx1xhxw
+    else:
+        kernel = (torch.zeros(*imgc.shape[:2], device=imgc.device),  # sigmas
+                  torch.zeros(*imgc.shape[:2], device=imgc.device),  # rhos
+                  torch.zeros(*imgc.shape[:2], device=imgc.device))  # thetas
     for channel in range(imgc.shape[1]):
         img = imgc[:, channel:channel+1]  # Bx1xHxW
         # (Optional) remove saturated areas
-        start = time()
         mask = get_saturation_mask(img, discard_saturation)
-        print('    -- mask:          %1.5f' % (time() - start))
         # normalized image
-        start = time()
         img_normalized = normalize(img, q=q)
-        print('    -- normalize:     %1.5f' % (time() - start))
         # compute the image gradients
-        start = time()
         gradients = compute_gradients(img_normalized, mask=mask)
-        print('    -- gradients:     %1.5f' % (time() - start))
         # compute the gradient magnitudes per orientation
-        start = time()
         gradient_magnitudes = compute_gradient_magnitudes(gradients, n_angles=n_angles)
-        print('    -- magnitudes:    %1.5f' % (time() - start))
         # find the maximal blur direction amongst sampled orientations
-        start = time()
         magnitude_normal, magnitude_ortho, thetas = find_maximal_blur_direction(gradient_magnitudes, 
                                                                                 thetas, interpolated_thetas)
-        print('    -- directions:    %1.5f' % (time() - start))
         # finally compute the Gaussian parameters
-        start = time()
         sigma, rho = compute_gaussian_parameters(magnitude_normal, magnitude_ortho, c=c, b=b)
-        print('    -- parameters:    %1.5f' % (time() - start))
-        # create the blur kernel
-        start = time()
-        kernel[:, channel:channel+1] = create_gaussian_filter(thetas, sigma, rho, ksize=ker_size)
-        print('    -- kernels:       %1.5f' % (time() - start))
+        # create the blur kernel or store the Gaussian parameters
+        if return_2d_filters:
+            kernel[:, channel:channel+1] = create_gaussian_filter(thetas, sigma, rho, ksize=ker_size)
+        else:
+            kernel[0][:,channel:channel+1] = sigma
+            kernel[1][:,channel:channel+1] = rho
+            kernel[2][:,channel:channel+1] = theta
         
     return kernel
 

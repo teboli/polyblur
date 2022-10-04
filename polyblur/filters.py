@@ -5,7 +5,6 @@ import torch.fft
 import scipy.fft
 
 from . import utils
-# TODO: import separable_gaussian_kernels
 
 
 #####################################################################
@@ -13,14 +12,13 @@ from . import utils
 #####################################################################
 
 def convolve2d(img, kernel, ksize=25, padding='same', method='direct'):
-    # TODO: replace 1d kernels by (sigma,rho,theta)
     """
     A per kernel wrapper for torch.nn.functional.conv2d
     :param img: (B,C,H,W) torch.tensor, the input images
     :param kernel: (B,C,h,w) or 
                    (B,1,h,w) torch.tensor, the 2d blur kernels (valid for both deblurring methods), or 
-                   [(B,C,h), (B,C,w)] or 
-                   [(B,1,h), (B,1,h)], the separable 1d blur kernels (valid only for spatial deblurring)
+                   [(B,C), (B,C), (B,C)] or 
+                   [(B,1), (B,1), (B,1)], the separable 1d blur kernel parameters (valid only for spatial deblurring)
     :param padding: string, can be 'valid' or 'same' 
     : 
     :return imout: (B,C,H,W) torch.tensor, the filtered images
@@ -28,7 +26,7 @@ def convolve2d(img, kernel, ksize=25, padding='same', method='direct'):
     if method == 'direct':
         if type(kernel) == torch.Tensor:  # if we have 2D kernels, do general 2D convolution
             return conv2d_(img, kernel, padding)
-        else:                                     # else, do Gaussian-specific 1D separable convolution
+        else:                                     # else, tuples and do Gaussian-specific 1D separable convolution
             return gaussian_separable_conv2d_(img, kernel, ksize, padding)
     elif method == 'fft':
         assert(type(kernel) == torch.Tensor)  # for FFT, we only use 2D kernels
@@ -106,7 +104,7 @@ def gaussian_xt_separable_conv2d_(img, sigma, rho, theta, ksize):
 #####################################################################
 
 
-def bilateral_filter(I, ksize=7, sigma_spatial=5.0, sigma_color=0.1):
+def bilateral_filter(I, ksize=5, sigma_spatial=5.0, sigma_color=0.1):
     ## precompute the spatial kernel: each entry of gw is a square spatial difference
     t = torch.arange(-ksize//2+1, ksize//2+1, device=I.device)
     xx, yy = torch.meshgrid(t, t, indexing='xy')
@@ -117,7 +115,7 @@ def bilateral_filter(I, ksize=7, sigma_spatial=5.0, sigma_color=0.1):
 
     ## Filtering
     var2_color = 2 * sigma_color * sigma_color
-    return bilateral_filter_loop_(I, I_padded, gw, var2_color, J, W)
+    return bilateral_filter_loop_(I, I_padded, gw, var2_color)
 
 
 def bilateral_filter_loop_(I, I_padded, gw, var2, do_for=True):
@@ -126,22 +124,19 @@ def bilateral_filter_loop_(I, I_padded, gw, var2, do_for=True):
     if do_for:  # memory-friendly option (Recommanded for larger images)
         J = torch.zeros_like(I)
         W = torch.zeros_like(I)
-        for z in range(gw.shape[0] * gw.shape[1]):
-            # compute the indices
-            x = z % gw.shape[0]
-            y = (z-x) // gw.shape[1]
+        for y in range(gw.shape[0]):
             yy = y + h
-            xx = x + w
             # get the shifted image
-            I_shifted = I_padded[..., y:yy, x:xx]
+            I_shifted = I_padded[..., y:yy, :]
+            I_shifted = utils.extract_tiles(I_shifted, kernel_size=(h,w), stride=1)  # (B,ksize,C,H,W)
             # color weight
-            F = I_shifted - I  # (B,C,H,W)
+            F = I_shifted - I.unsqueeze(1)  # (B,ksize,C,H,W)
             F = torch.exp(-F * F / var2) 
             # product with spatial weight
-            F *= gw[y, x] # (B,C,H,W)
-            J += F * I_shifted
-            W += F
-    else:  # pytorch-friendly option (Faster for smaller images and/or batche sizes)
+            F *= gw[y].view(-1, 1, 1, 1) # (B,ksize,C,H,W)
+            J += torch.sum(F * I_shifted, dim=1)
+            W += torch.sum(F, dim=1)
+    else:  # pytorch-friendly option (Faster for smaller images and/or batch sizes)
         # get shifted images
         I_shifted = utils.extract_tiles(I_padded, kernel_size=(h,w), stride=1)  # (B,ksize*ksize,C,H,W)
         F = I_shifted - I.unsqueeze(1)
@@ -150,7 +145,7 @@ def bilateral_filter_loop_(I, I_padded, gw, var2, do_for=True):
         F *= gw.view(-1, 1, 1, 1)
         J = torch.sum(F * I_shifted, dim=1)  # (B,C,H,W)
         W = torch.sum(F, dim=1)  # (B,C,H,W)
-    return J / (W + 1e-8)
+    return J / (W + 1e-5)
 
     
 

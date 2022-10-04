@@ -68,4 +68,4 @@ def extract_tiles(img, kernel_size, stride=1):
     tiles = tiles.permute(0, 2, 1)  # (B,L,C*H*W)
     tiles = tiles.view(b, -1, c, h ,w)
     return tiles
-    
+
