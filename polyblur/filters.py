@@ -88,6 +88,7 @@ def crop(image, new_size):
     return image
 
 
+@torch.jit.script
 def fourier_gradients(images):
     """
     Compute the image gradients using Fourier interpolation as in Eq. (21a) and (21b)
@@ -97,8 +98,9 @@ def fourier_gradients(images):
     """
     ## Find fast size for FFT
     h, w = images.shape[-2:]
-    h_fast = scipy.fft.next_fast_len(h)
-    w_fast = scipy.fft.next_fast_len(w)
+    h_fast, w_fast = images.shape[-2:]
+    # h_fast = scipy.fft.next_fast_len(h)
+    # w_fast = scipy.fft.next_fast_len(w)
     ## compute FT
     U = torch.fft.fft2(images, s=(h_fast, w_fast))
     U = torch.fft.fftshift(U, dim=(-2, -1))
@@ -109,11 +111,11 @@ def fourier_gradients(images):
     gxU = 2 * np.pi * freqw * (-torch.imag(U) + 1j * torch.real(U))
     gxU = torch.fft.ifftshift(gxU, dim=(-2, -1))
     gxu = torch.real(torch.fft.ifft2(gxU))
-    gxu = crop(gxu, (h, w))
+    # gxu = crop(gxu, (h, w))
     gyU = 2 * np.pi * freqh * (-torch.imag(U) + 1j * torch.real(U))
     gyU = torch.fft.ifftshift(gyU, dim=(-2, -1))
     gyu = torch.real(torch.fft.ifft2(gyU))
-    gyu = crop(gyu, (h, w))
+    # gyu = crop(gyu, (h, w))
     return gxu, gyu
 
 

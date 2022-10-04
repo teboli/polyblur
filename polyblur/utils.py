@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.fft
+import torch.nn.functional as F
 from skimage import img_as_float32
 
 
@@ -44,3 +45,11 @@ def to_uint(img):
     return img
 
 
+def pad_with_kernel(img, kernel):
+    ks = kernel.shape[-1] // 2
+    return F.pad(img, (ks, ks, ks, ks), mode='replicate')
+
+
+def crop_with_kernel(img, kernel):
+    ks = kernel.shape[-1] // 2
+    return img[..., ks:-ks, ks:-ks]
