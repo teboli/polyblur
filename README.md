@@ -11,9 +11,12 @@ and qualitative results of the original paper.
 
 A description an analysis of the algorithm can be found in a companion IPOL paper:
 *Breaking down Polyblur: Fast blind Correction of Small Anisotropic Blurs* in Image Processing OnLine 2022 by Thomas Eboli, 
-Jean-Michel Morel and Gabriele Facciolo.
+Jean-Michel Morel and Gabriele Facciolo. An online demo using this code can be 
+found <a href="https://ipolcore.ipol.im/demo/clientApp/demo.html?id=405">here</a>.
+
 
 ### Test
+----------
 
 First install the requirements with
 > pip install -r requirements.txt
@@ -32,6 +35,7 @@ the deconvolution filter's parameters alpha and beta
 
 
 ### Description
+----------
 
 After installation, the package is imported to any project with
 > import polyblur
@@ -47,6 +51,7 @@ with
 
 
 ### Calibration
+----------
 
 We also provide a code for reproducing the calibration curves of the original paper with our FFT-based implementation of 
 the gradients, or any other one one can image. To compute the slope and intercept 
@@ -64,6 +69,7 @@ to the DVI2K validation set.
 
 
 ### Roadmap
+----------
 
 This code reproduces the results of the TCI'22 article but is not as fast. Even though it is not the
 goal of this repository, here are some elements I will enhance in a near future:
@@ -72,5 +78,23 @@ goal of this repository, here are some elements I will enhance in a near future:
 
 
 ### Contact 
+----------
 
 If you encounter any problem with the code, please contact me at <thomas.eboli@ens-paris-saclay.fr>.
+
+
+### Citation
+----------
+
+If this code is useful for your research, please cite our paper.
+
+```BibTex
+@article{eboli22polyblur,
+  title={Breaking down Polyblur: Fast Blind Correction of Small Anisotropic Blurs},
+  author={Eboli, Thomas and Morel, Jean-Michel and Facciolo, Gabriele},
+  journal={Image Processing On Line},
+  volume={12},
+  pages={378--399},
+  year={2022},
+}
+```
