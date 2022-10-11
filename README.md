@@ -15,7 +15,7 @@ Jean-Michel Morel and Gabriele Facciolo. An online demo using this code can be
 found <a href="https://ipolcore.ipol.im/demo/clientApp/demo.html?id=405">here</a>.
 
 
-### Test
+### Installation
 ----------
 
 First install the requirements with
@@ -26,6 +26,13 @@ Second, install the main module with
 
 The Pytorch implementation of this code runs **ONLY** with torch 1.10+ 
 versions (because of torch.fft for the computation of the gradients with the pytorch implementation).
+
+Alternatively, you can install the package from pypi.org:
+> pip install polyblur
+
+### Test
+----------
+
 
 Once done, you can test the blind deblurring technique with
 > python main.py --impath ./pictures/peacock_defocus.png --N 3 --alpha 6 --beta 1
