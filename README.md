@@ -11,8 +11,8 @@ and qualitative results of the original paper.
 
 A description an analysis of the algorithm can be found in a companion IPOL paper:
 *Breaking down Polyblur: Fast blind Correction of Small Anisotropic Blurs* in Image Processing OnLine 2022 by Thomas Eboli, 
-Jean-Michel Morel and Gabriele Facciolo. An online demo using this code can be 
-found <a href="https://ipolcore.ipol.im/demo/clientApp/demo.html?id=405">here</a>.
+Jean-Michel Morel and Gabriele Facciolo.<a href="http://www.ipol.im/pub/art/2022/405/">[paper]</a>
+<a href="https://ipolcore.ipol.im/demo/clientApp/demo.html?id=405">[demo]</a>.
 
 
 ### Installation
@@ -93,7 +93,7 @@ If you encounter any problem with the code, please contact me at <thomas.eboli@e
 ### Citation
 ----------
 
-If this code is useful for your research, please cite our paper.
+If this code or the demo are useful for your research, please cite our paper.
 
 ```BibTex
 @article{eboli22polyblur,
@@ -101,7 +101,7 @@ If this code is useful for your research, please cite our paper.
   author={Eboli, Thomas and Morel, Jean-Michel and Facciolo, Gabriele},
   journal={Image Processing On Line},
   volume={12},
-  pages={378--399},
+  pages={435--456},
   year={2022},
 }
 ```
