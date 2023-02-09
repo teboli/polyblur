@@ -22,7 +22,7 @@ from time import time
 
 def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_r=0.8, sigma_s=2.0, ker_size=25, q=0.0, n_angles=6,
                         n_interpolated_angles=30, remove_halo=False, edgetaping=False, prefiltering=False, 
-                        discard_saturation=False, multichannel_kernel=False, method='fft'):
+                        discard_saturation=False, multichannel_kernel=False, method='fft', verbose=False):
     """
     Meta Functional implementation of Polyblur.
     :param img: (H, W) or (H,W,3) np.array or (B,C,H,W) torch.tensor, the blurry image(s)
@@ -61,7 +61,8 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
     grad_img = filters.fourier_gradients(img)
     thetas = torch.linspace(0, 180, n_angles+1, device=img.device).unsqueeze(0).long()   # (1,n)
     interpolated_thetas = torch.arange(0, 180, 180 / n_interpolated_angles, device=img.device).unsqueeze(0).long()  # (1,N)
-    print('-- init tensors:      %1.5f' % (time() - start))
+    if verbose:
+        print('-- init tensors:      %1.5f' % (time() - start))
 
     ## Main loop
     for n in range(n_iter):
@@ -71,7 +72,8 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
                                                           ker_size=ker_size, multichannel=multichannel_kernel, 
                                                           thetas=thetas, interpolated_thetas=interpolated_thetas,
                                                           return_2d_filters=return_2d_filters)
-        print('-- blur estimation %d: %1.5f' % (n+1, time() - start))
+        if verbose:
+            print('-- blur estimation %d: %1.5f' % (n+1, time() - start))
 
         ## Non-blind deblurring
         start =time()
@@ -84,7 +86,8 @@ def polyblur_deblurring(img, n_iter=1, c=0.352, b=0.768, alpha=2, beta=3, sigma_
             impred = inverse_filtering_rank3(impred, kernel, alpha=alpha, b=beta, remove_halo=remove_halo,
                                              do_edgetaper=edgetaping, grad_img=grad_img, method=method)
         impred = impred.clip(0.0, 1.0)
-        print('-- deblurring %d:      %1.5f' % (n+1, time() - start))
+        if verbose:
+            print('-- deblurring %d:      %1.5f' % (n+1, time() - start))
 
     ## Go back to numpy if needs be
     if flag_numpy:

@@ -45,16 +45,21 @@ the deconvolution filter's parameters alpha and beta
 ----------
 
 After installation, the package is imported to any project with
-> import polyblur
+```python
+import polyblur
+```
 
 The code contains *functional* and *module* blocks: The first is found in the path
-> polyblur.polyblur_deblurring
+```python
+polyblur.polyblur_deblurring
+```
 
 and is agnostic to (H,W,C) or (H,W) Numpy arrays or (B,C,H,W) Pytorch tensors. The latter inherits from torch.nn.module 
 and either call deblurring.polyblur on the whole image or overlapping patches. This module is called
-with 
-> polyblur.PolyblurDeblurring
-
+with
+```python 
+polyblur.PolyblurDeblurring
+```
 
 
 ### Calibration
