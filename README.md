@@ -49,17 +49,27 @@ After installation, the package is imported to any project with
 import polyblur
 ```
 
-The code contains *functional* and *module* blocks: The first is found in the path
+It contains a main function *polyblur_deblurring* that is agnostic to the input argument img being a (H,W,C) or (H,W) Numpy array or (B,C,H,W) Pytorch tensor. An example reads:
 ```python
-polyblur.polyblur_deblurring
-```
+from polyblur import polyblur_deblurring
 
-and is agnostic to (H,W,C) or (H,W) Numpy arrays or (B,C,H,W) Pytorch tensors. The latter inherits from torch.nn.module 
-and either call deblurring.polyblur on the whole image or overlapping patches. This module is called
-with
-```python 
-polyblur.PolyblurDeblurring
+im_restored = polyblur_deblurring(img, n_iter=3)
 ```
+It runs three iterations of Polyblur with default parameters and returns and Numpy array or a Pytorch tensor depending on the input.
+
+
+A Pytorch module *PolyblurDeblurring* that inherits from torch.nn.Module is also provided to be put within neurals networks are training losses. 
+An example reads:
+```python 
+from polyblur import PolyblurDeblurring
+
+deblurrer = PolyblurDeblurring()
+deblurrer.to(device)
+
+im_restored = deblurrer(img, n_iter=3)
+```
+It runs three iterations of Polyblur with default parameters and returns a Pytorch tensor.
+
 
 
 ### Calibration
