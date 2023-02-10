@@ -19,29 +19,37 @@ Jean-Michel Morel and Gabriele Facciolo.<a href="http://www.ipol.im/pub/art/2022
 ----------
 
 First install the requirements with
-> pip install -r requirements.txt
+```bash
+pip install -r requirements.txt
+```
 
 Second, install the main module with
-> python setup.py install
+```bash
+python setup.py install
+```
 
 The Pytorch implementation of this code runs **ONLY** with torch 1.10+ 
 versions (because of torch.fft for the computation of the gradients with the pytorch implementation).
 
 Alternatively, you can install the package from pypi.org:
-> pip install polyblur
+```bash
+pip install polyblur
+```
 
 ### Test
 ----------
 
-
-Once done, you can test the blind deblurring technique with
-> python main.py --impath ./pictures/peacock_defocus.png --N 3 --alpha 6 --beta 1
+After installation from sources or via *pip*, you can test the blind deblurring technique with
+```bash
+python main.py --impath ./pictures/peacock_defocus.png --N 3 --alpha 6 --beta 1
+```
 
 You can modify several parameters, e.g. the number of Polyblur iterations and
-the deconvolution filter's parameters alpha and beta
+the deconvolution filter's parameters $alpha$ and $beta$. You may further overlead the default
+calibration parameters $c$ and $b$ if you need even more aggressive deblurring.
 
 
-### Description
+### Import into your projects
 ----------
 
 After installation, the package is imported to any project with
@@ -53,12 +61,13 @@ It contains a main function *polyblur_deblurring* that is agnostic to the input 
 ```python
 from polyblur import polyblur_deblurring
 
-im_restored = polyblur_deblurring(img, n_iter=3)
+im_restored = polyblur_deblurring(img, n_iter=3, alpha=2, beta=4, c=0.352, b=0.768)
 ```
 It runs three iterations of Polyblur with default parameters and returns and Numpy array or a Pytorch tensor depending on the input.
 
 
-A Pytorch module *PolyblurDeblurring* that inherits from torch.nn.Module is also provided to be put within neurals networks are training losses. 
+A Pytorch module *PolyblurDeblurring* that inherits from torch.nn.Module is also provided.
+The module and the functional version above are fully differentiable. They thus can be be put within neurals networks are training losses.
 An example reads:
 ```python 
 from polyblur import PolyblurDeblurring
@@ -66,9 +75,15 @@ from polyblur import PolyblurDeblurring
 deblurrer = PolyblurDeblurring()
 deblurrer.to(device)
 
-im_restored = deblurrer(img, n_iter=3)
+im_restored = deblurrer(img, n_iter=3, alpha=2, beta=4, c=0.352, b=0.768)
 ```
 It runs three iterations of Polyblur with default parameters and returns a Pytorch tensor.
+
+You'll most likely have to play with $n_{iter}$, $\alpha$ and $\beta$ to get the best deblurring results on one example, or finding a
+default set of parameter that works for most images. You can
+also tweack $c$ and $b$ that are the affine model parameters. The default values are the one calibrated with the code below that
+are similar to that reported in the original paper. You may change them too, but it is not recommanded. Please
+refer to our <a href="http://www.ipol.im/pub/art/2022/405/">[paper]</a> for details on the parameter tuning.
 
 
 
@@ -78,7 +93,9 @@ It runs three iterations of Polyblur with default parameters and returns a Pytor
 We also provide a code for reproducing the calibration curves of the original paper with our FFT-based implementation of 
 the gradients, or any other one one can image. To compute the slope and intercept 
 of the model, please run
-> python calibration_blur_parameters.py
+```bash
+python calibration_blur_parameters.py
+```
 
 Below is an example of the predicted curves for 1% additive Gaussian noise. If you use the exact same implementation 
 of the gradients as in this repo, you should find something  like (0.362, -0.468) for the affine model parameters.
