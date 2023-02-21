@@ -155,7 +155,7 @@ def bilateral_filter_loop_(I, I_padded, gw, var2, do_for=True):
 #####################################################################
 
 
-@torch.jit.script
+# @torch.jit.script
 def fourier_gradients(images):
     """
     Compute the image gradients using Fourier interpolation as in Eq. (21a) and (21b)

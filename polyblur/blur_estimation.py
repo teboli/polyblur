@@ -134,7 +134,7 @@ def compute_gradient_magnitudes(gradients, n_angles=6):
     return gradient_magnitudes_angles
 
 
-@torch.jit.script
+# @torch.jit.script
 def cubic_interpolator(x_new, x, y):
     """
     Fast implement of cubic interpolator based on Keys' algorithm
@@ -185,7 +185,7 @@ def compute_gaussian_parameters(magnitudes_normal, magnitudes_ortho, c, b):
     return sigma, rho
 
 
-@torch.jit.script
+# @torch.jit.script
 def compute_gaussian_filter_parameters(sigmas, rhos, thetas):
     B = len(sigmas)
     C = 1

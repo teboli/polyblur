@@ -169,22 +169,22 @@ def compute_polynomial_fft(img, kernel, alpha, b, not_symmetric=False):
     return torch.real(torch.fft.ifft2(X, dim=(-2, -1)))
 
 
-@torch.jit.script
+# @torch.jit.script
 def grad_prod_(grad_x, grad_y, gout_x, gout_y):
     return (- grad_x * gout_x) +  (- grad_y * grad_y)
 
 
-@torch.jit.script
+# @torch.jit.script
 def grad_square_(grad_x, grad_y):
     return grad_x * grad_x + grad_y * grad_y
 
 
-@torch.jit.script
+# @torch.jit.script
 def grad_div_and_clip_(M, nM):
     return torch.clamp(M / (nM + M), min=0)
 
 
-@torch.jit.script
+# @torch.jit.script
 def grad_convex_sum_(img, imout, z):
     # Equivalent to z * img + (1-z) * imout
     return imout + z * (img - imout)
