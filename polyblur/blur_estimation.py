@@ -79,7 +79,6 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
     return kernel
 
 
-@torch.jit.script
 def get_saturation_mask(img, discard_saturation, threshold=0.99):
     if discard_saturation:
         mask = img > threshold
