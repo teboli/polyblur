@@ -28,7 +28,7 @@ polyblur.PolyblurDeblurring
 # Install the main polyblur module
 setup(
     name='polyblur',
-    version="0.1.3",
+    version="0.1.5",
     author="Thomas Eboli",
     author_email="thomas.eboli@ens-paris-saclay.fr",
     description="Breaking down Polyblur: Fast blind Correction of Small Anisotropic Blurs [IPOL2022]",

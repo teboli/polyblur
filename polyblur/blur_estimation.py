@@ -79,6 +79,7 @@ def gaussian_blur_estimation(imgc, q=0.0001, n_angles=6, n_interpolated_angles=3
     return kernel
 
 
+# @torch.jit.script
 def get_saturation_mask(img, discard_saturation, threshold=0.99):
     if discard_saturation:
         mask = img > threshold
@@ -87,7 +88,7 @@ def get_saturation_mask(img, discard_saturation, threshold=0.99):
     return mask 
 
 
-@torch.jit.script
+# @torch.jit.script
 def clamp_(img, max=1.0, min=0.0):
     return ( (img - min) / (max - min) ).clamp(0.0, 1.0)
 
@@ -166,7 +167,7 @@ def find_maximal_blur_direction(gradient_magnitudes_angles, thetas, interpolated
     return magnitudes_normal, magnitudes_ortho, thetas_normal.float() * np.pi / 180
 
 
-@ torch.jit.script
+# @ torch.jit.script
 def compute_gaussian_parameters(magnitudes_normal, magnitudes_ortho, c, b):
     """
     Estimate the blur's standard deviations applying the affine model Eq.(24) followed by clipping
